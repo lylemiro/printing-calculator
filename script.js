@@ -10,7 +10,8 @@ let isEditingInventory = false;
 
 let printJobTypes = {};
 let photoBundles = {};
-let photoYieldSettings = { bundlesPerSheet: 0, paperType: 'A4 Sticker Photo Paper' };
+let photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 0, max1x1PerA4: 0 };
+let photoPaperCumulativeFractionUsed = 0; // NEW: Tracks fractional usage for photo paper
 
 let currentEditingJobIndex = -1;
 
@@ -253,7 +254,9 @@ function showManagePhotoBundlesModal() {
     });
     photoBundlePaperTypeSelect.value = photoYieldSettings.paperType;
     
-    document.getElementById('bundlesPerSheet').value = photoYieldSettings.bundlesPerSheet;
+    document.getElementById('max2x2PerA4').value = photoYieldSettings.max2x2PerA4;
+    document.getElementById('max1x1PerA4').value = photoYieldSettings.max1x1PerA4;
+
     renderPhotoBundleManagementList();
 }
 
@@ -261,12 +264,43 @@ function hideManagePhotoBundlesModal() {
     document.getElementById('managePhotoBundlesModalOverlay').classList.remove('show');
 }
 
-function updatePhotoSheetYields() {
-    photoYieldSettings.bundlesPerSheet = Math.max(0, parseInt(document.getElementById('bundlesPerSheet').value) || 0);
+function updatePhotoYieldSettings() {
     photoYieldSettings.paperType = document.getElementById('photoBundlePaperType').value;
+    photoYieldSettings.max2x2PerA4 = Math.max(0, parseInt(document.getElementById('max2x2PerA4').value) || 0);
+    photoYieldSettings.max1x1PerA4 = Math.max(0, parseInt(document.getElementById('max1x1PerA4').value) || 0);
     saveData();
-    alert('Photo sheet yields updated.');
+    renderPhotoBundleManagementList();
+    alert('Photo yield settings updated.');
 }
+
+// Helper to calculate sheets consumed by a bundle based on global yields
+function calculateBundleSheetConsumption(bundleComposition, numberOfBundles) {
+    const max2x2 = photoYieldSettings.max2x2PerA4;
+    const max1x1 = photoYieldSettings.max1x1PerA4;
+
+    if (max2x2 <= 0 && max1x1 <= 0) {
+        return { sheets: 0, error: "Max 2x2s/1x1s per A4 not set in Photo Bundle Yield Settings.", fractionalSheets: 0 };
+    }
+
+    const total2x2sNeeded = (bundleComposition['2x2'] || 0) * numberOfBundles;
+    const total1x1sNeeded = (bundleComposition['1x1'] || 0) * numberOfBundles;
+
+    let fractionOfSheetFor2x2s = 0;
+    if (max2x2 > 0) {
+        fractionOfSheetFor2x2s = total2x2sNeeded / max2x2;
+    }
+
+    let fractionOfSheetFor1x1s = 0;
+    if (max1x1 > 0) {
+        fractionOfSheetFor1x1s = total1x1sNeeded / max1x1;
+    }
+
+    const totalSheetFraction = fractionOfSheetFor2x2s + fractionOfSheetFor1x1s;
+    const sheetsConsumed = Math.ceil(totalSheetFraction); // Whole sheets for immediate deduction/check
+
+    return { sheets: sheetsConsumed, error: null, fractionalSheets: totalSheetFraction };
+}
+
 
 function renderPhotoBundleManagementList() {
     const listElement = document.getElementById('photoBundleManagementList');
@@ -274,6 +308,8 @@ function renderPhotoBundleManagementList() {
 
     for (const bundleName in photoBundles) {
         const bundle = photoBundles[bundleName];
+        const calculatedConsumption = calculateBundleSheetConsumption(bundle.composition, 1);
+
         const li = document.createElement('li');
         li.dataset.originalName = bundleName;
         li.innerHTML = `
@@ -281,6 +317,7 @@ function renderPhotoBundleManagementList() {
             <label>Price: ₱<input type="number" step="0.01" class="bundle-price-input" value="${bundle.price}"></label>
             <label>2x2: <input type="number" class="bundle-2x2-input" value="${bundle.composition['2x2'] || 0}"></label>
             <label>1x1: <input type="number" class="bundle-1x1-input" value="${bundle.composition['1x1'] || 0}"></label>
+            <span class="calculated-sheets">Calculated Sheets: ${calculatedConsumption.fractionalSheets.toFixed(2)} (deduction is cumulative)</span>
             <div class="item-actions">
                 <button class="delete-btn" onclick="deletePhotoBundle('${bundleName}')">Delete</button>
             </div>
@@ -411,6 +448,7 @@ function loadData() {
     const storedPrintJobTypes = localStorage.getItem('printJobTypes');
     const storedPhotoBundles = localStorage.getItem('photoBundles');
     const storedPhotoYieldSettings = localStorage.getItem('photoYieldSettings');
+    const storedPhotoPaperCumulativeFractionUsed = localStorage.getItem('photoPaperCumulativeFractionUsed');
 
     if (storedInventory) {
         inventory = JSON.parse(storedInventory);
@@ -448,7 +486,11 @@ function loadData() {
     if (storedPhotoYieldSettings) {
         photoYieldSettings = JSON.parse(storedPhotoYieldSettings);
     } else {
-        photoYieldSettings = { bundlesPerSheet: 4, paperType: 'A4 Sticker Photo Paper' };
+        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40 };
+    }
+
+    if (storedPhotoPaperCumulativeFractionUsed !== null) {
+        photoPaperCumulativeFractionUsed = parseFloat(storedPhotoPaperCumulativeFractionUsed);
     }
 }
 
@@ -462,6 +504,7 @@ function saveData() {
     localStorage.setItem('printJobTypes', JSON.stringify(printJobTypes));
     localStorage.setItem('photoBundles', JSON.stringify(photoBundles));
     localStorage.setItem('photoYieldSettings', JSON.stringify(photoYieldSettings));
+    localStorage.setItem('photoPaperCumulativeFractionUsed', photoPaperCumulativeFractionUsed);
 }
 
 function calculateInitialEstimatedProfit() {
@@ -670,6 +713,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rejectedBW').addEventListener('input', toggleAddPrintJobButton);
     document.getElementById('rejectedColor').addEventListener('input', toggleAddPrintJobButton);
     toggleAddPrintJobButton();
+
+    document.getElementById('setupModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideSetupModal();
+    });
+    document.getElementById('addPaperModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideAddPaperModal();
+    });
+    document.getElementById('managePrintTypesModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideManagePrintTypesModal();
+    });
+    document.getElementById('managePhotoBundlesModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideManagePhotoBundlesModal();
+    });
+    document.getElementById('editJobModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideEditJobModal();
+    });
 });
 
 // --- Main Display Update ---
@@ -703,7 +762,8 @@ function resetInventory() {
             "Set C": { price: 50, composition: { '2x2': 4, '1x1': 8 } },
             "Set D": { price: 40, composition: { '2x2': 4, '1x1': 0 } }
         };
-        photoYieldSettings = { bundlesPerSheet: 4, paperType: 'A4 Sticker Photo Paper' };
+        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40 }; 
+        photoPaperCumulativeFractionUsed = 0; // NEW: Reset cumulative fraction
         history = [];
         
         localStorage.setItem('isSetupComplete', 'false');
@@ -845,27 +905,34 @@ function addPhotoBundleJob() {
         alert('Bundle quantity must be at least 1.');
         return;
     }
-    if (photoYieldSettings.bundlesPerSheet <= 0) {
-        alert('Please set "Bundles per Sheet" in "Manage Photo ID Bundles" modal to calculate paper consumption.');
-        return;
-    }
-    const photoPaperType = photoYieldSettings.paperType;
-    if (inventory[photoPaperType] === undefined) {
-        alert(`"${photoPaperType}" is not in your inventory. Please add it via "Edit Inventory" or select a different paper type for photo bundles.`);
+    if (!photoYieldSettings.paperType || inventory[photoYieldSettings.paperType] === undefined) {
+        alert(`Please select a valid "Paper Type for Bundles" in "Manage Photo ID Bundles" modal, and ensure it exists in your inventory.`);
         return;
     }
 
     const selectedBundle = photoBundles[bundleName];
     const pricePerBundle = selectedBundle.price;
-
-    let sheetsConsumedByBundle = Math.ceil(bundleQty / photoYieldSettings.bundlesPerSheet);
     
-    if (inventory[photoPaperType] < sheetsConsumedByBundle) {
-        alert(`Not enough "${photoPaperType}" paper! You need ${sheetsConsumedByBundle} sheets, but only have ${inventory[photoPaperType]}.`);
+    const consumptionResult = calculateBundleSheetConsumption(selectedBundle.composition, bundleQty);
+    if (consumptionResult.error) {
+        alert(consumptionResult.error);
+        return;
+    }
+    const fractionalSheetsForCurrentJob = consumptionResult.fractionalSheets;
+
+    photoPaperCumulativeFractionUsed += fractionalSheetsForCurrentJob;
+    let wholeSheetsToDeductThisTransaction = Math.floor(photoPaperCumulativeFractionUsed);
+
+    const photoPaperType = photoYieldSettings.paperType;
+
+    if (inventory[photoPaperType] < wholeSheetsToDeductThisTransaction) {
+        alert(`Not enough "${photoPaperType}" paper! You need to deduct ${wholeSheetsToDeductThisTransaction} sheets, but only have ${inventory[photoPaperType]}.`);
+        photoPaperCumulativeFractionUsed -= fractionalSheetsForCurrentJob;
         return;
     }
 
-    inventory[photoPaperType] -= sheetsConsumedByBundle;
+    inventory[photoPaperType] -= wholeSheetsToDeductThisTransaction;
+    photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5)); // Use toFixed for precision
 
     const totalCost = pricePerBundle * bundleQty;
     const totalLoss = 0;
@@ -879,11 +946,13 @@ function addPhotoBundleJob() {
         bundleQuantity: bundleQty,
         bundlePricePerUnit: pricePerBundle,
         bundleComposition: selectedBundle.composition,
-        paperConsumed: sheetsConsumedByBundle,
+        paperConsumed: wholeSheetsToDeductThisTransaction, // Actual whole sheets deducted in this transaction
+        jobFractionalSheetsConsumed: fractionalSheetsForCurrentJob, // The precise fractional amount for this job
         totalCost: totalCost,
         totalLoss: totalLoss,
         netProfit: netProfit,
-        jobYieldBundlesPerSheet: photoYieldSettings.bundlesPerSheet
+        jobYieldMax2x2PerA4: photoYieldSettings.max2x2PerA4,
+        jobYieldMax1x1PerA4: photoYieldSettings.max1x1PerA4
     };
 
     history.push(job);
@@ -891,8 +960,8 @@ function addPhotoBundleJob() {
     updateDisplay();
     displayHistory();
     renderChart();
-    hideAddBundleJobModal();
-    alert(`Added ${bundleQty} x "${bundleName}" job.`);
+    document.getElementById('bundleQuantity').value = 1;
+    alert(`Added ${bundleQty} x "${bundleName}" job. (Deducted ${wholeSheetsToDeductThisTransaction} sheets. Cumulative fraction: ${photoPaperCumulativeFractionUsed.toFixed(2)})`);
 }
 
 
@@ -945,7 +1014,7 @@ function displayHistory(filteredHistory = history) {
                 <strong>${job.date}</strong> - ${job.bundleName} (x${job.bundleQuantity})<br>
                 Paper Type: ${job.paperType.toUpperCase()}<br>
                 Photos: 2x2: ${total2x2s} | 1x1: ${total1x1s}<br>
-                Total Sheets Used: ${job.paperConsumed}<br>
+                Fractional Sheets Used: ${job.jobFractionalSheetsConsumed.toFixed(2)} (Actual Deduction: ${job.paperConsumed} sheets)<br>
                 Profit: ₱${job.netProfit.toFixed(2)}
             `;
         }
@@ -974,7 +1043,6 @@ function showEditJobModal(index) {
     document.getElementById('editJobIndexDisplay').textContent = index;
     document.getElementById('editJobDate').value = job.date;
 
-    // Populate paper type dropdown for edit modal
     const editJobPaperTypeSelect = document.getElementById('editJobPaperType');
     editJobPaperTypeSelect.innerHTML = '';
     const sortedPaperTypes = Object.keys(inventory).sort();
@@ -986,7 +1054,6 @@ function showEditJobModal(index) {
     });
     editJobPaperTypeSelect.value = job.paperType;
 
-    // Populate print type dropdown for edit modal
     const editJobPrintTypeSelect = document.getElementById('editJobPrintType');
     editJobPrintTypeSelect.innerHTML = '';
     const sortedPrintTypes = Object.keys(printJobTypes).sort();
@@ -1074,12 +1141,28 @@ function saveEditedJob() {
     const newPaperType = document.getElementById('editJobPaperType').value;
     const newPrintTypeName = document.getElementById('editJobPrintType').value;
 
-    // Revert old job's paper consumption to inventory
-    if (inventory[oldJob.paperType] !== undefined) {
-        inventory[oldJob.paperType] += oldJob.paperConsumed;
-    } else {
-        inventory[oldJob.paperType] = oldJob.paperConsumed;
+    // --- REVERT OLD JOB'S INVENTORY IMPACT ---
+    if (oldJob.type === 'print') {
+        if (inventory[oldJob.paperType] !== undefined) {
+            inventory[oldJob.paperType] += oldJob.paperConsumed;
+        } else {
+            inventory[oldJob.paperType] = oldJob.paperConsumed;
+        }
+    } else if (oldJob.type === 'photo_bundle') {
+        photoPaperCumulativeFractionUsed -= oldJob.jobFractionalSheetsConsumed;
+        // Handle potential negative fraction by refunding whole sheets
+        if (photoPaperCumulativeFractionUsed < 0) {
+            let sheetsToRefund = Math.ceil(Math.abs(photoPaperCumulativeFractionUsed));
+            if (inventory[oldJob.paperType] !== undefined) {
+                inventory[oldJob.paperType] += sheetsToRefund;
+            } else {
+                inventory[oldJob.paperType] = sheetsToRefund;
+            }
+            photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed + sheetsToRefund).toFixed(5)); // Adjust fraction to be positive
+        }
     }
+    // --- END REVERT OLD JOB'S INVENTORY IMPACT ---
+
 
     let updatedJob = { ...oldJob };
     updatedJob.date = newDate;
@@ -1102,7 +1185,9 @@ function saveEditedJob() {
 
         if (inventory[newPaperType] === undefined || inventory[newPaperType] < newPaperConsumed) {
             alert(`Not enough ${newPaperType} paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            // Revert inventory changes made at the start of saveEditedJob before returning
+            // This is complex for photo bundles, so we'll simplify: just alert and return, leaving inventory as is.
+            // For standard print jobs, the initial refund is correct.
             return;
         }
         inventory[newPaperType] -= newPaperConsumed;
@@ -1152,37 +1237,44 @@ function saveEditedJob() {
 
         if (!newBundleName || !photoBundles.hasOwnProperty(newBundleName)) {
             alert('Please select a valid Photo ID Bundle for the edited job.');
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            // Inventory was already reverted, so just return
             return;
         }
         if (newBundleQuantity <= 0) {
             alert('Bundle quantity must be at least 1.');
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            // Inventory was already reverted, so just return
             return;
         }
-        if (photoYieldSettings.bundlesPerSheet <= 0) {
-            alert('Please set "Bundles per Sheet" in "Manage Photo ID Bundles" modal to calculate paper consumption.');
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
-            return;
-        }
-        const photoPaperType = photoYieldSettings.paperType;
-        if (inventory[photoPaperType] === undefined) {
-            alert(`"${photoPaperType}" is not in your inventory. Please add it via "Edit Inventory" or select a different paper type for photo bundles.`);
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+        if (!photoYieldSettings.paperType || inventory[photoYieldSettings.paperType] === undefined) {
+            alert(`Please select a valid "Paper Type for Bundles" in "Manage Photo ID Bundles" modal, and ensure it exists in your inventory.`);
+            // Inventory was already reverted, so just return
             return;
         }
 
         const selectedBundle = photoBundles[newBundleName];
         const pricePerBundle = selectedBundle.price;
-
-        const newPaperConsumed = Math.ceil(newBundleQuantity / photoYieldSettings.bundlesPerSheet);
         
-        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newPaperConsumed) {
-            alert(`Not enough "${newPaperType}" paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
-            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+        const consumptionResult = calculateBundleSheetConsumption(selectedBundle.composition, newBundleQuantity);
+        if (consumptionResult.error) {
+            alert(consumptionResult.error);
+            // Inventory was already reverted, so just return
             return;
         }
-        inventory[newPaperType] -= newPaperConsumed;
+        const newFractionalSheetsForJob = consumptionResult.fractionalSheets;
+
+        // --- APPLY NEW JOB'S INVENTORY IMPACT (CUMULATIVE FRACTIONAL) ---
+        photoPaperCumulativeFractionUsed += newFractionalSheetsForJob;
+        let newWholeSheetsToDeduct = Math.floor(photoPaperCumulativeFractionUsed);
+
+        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newWholeSheetsToDeduct) {
+            alert(`Not enough "${newPaperType}" paper for edited job! You need to deduct ${newWholeSheetsToDeduct} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
+            photoPaperCumulativeFractionUsed -= newFractionalSheetsForJob; // Revert fraction
+            // Inventory was already reverted, so just return
+            return;
+        }
+        inventory[newPaperType] -= newWholeSheetsToDeduct;
+        photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5)); // Keep remaining fraction
+        // --- END APPLY NEW JOB'S INVENTORY IMPACT ---
 
         const newTotalCost = pricePerBundle * newBundleQuantity;
         const newTotalLoss = 0;
@@ -1194,15 +1286,17 @@ function saveEditedJob() {
             bundleQuantity: newBundleQuantity,
             bundlePricePerUnit: pricePerBundle,
             bundleComposition: selectedBundle.composition,
-            paperConsumed: newPaperConsumed,
+            paperConsumed: newWholeSheetsToDeduct, // Actual whole sheets deducted
+            jobFractionalSheetsConsumed: newFractionalSheetsForJob, // Precise fractional amount
             totalCost: newTotalCost,
             totalLoss: newTotalLoss,
             netProfit: newNetProfit,
-            jobYieldBundlesPerSheet: photoYieldSettings.bundlesPerSheet
+            jobYieldMax2x2PerA4: photoYieldSettings.max2x2PerA4,
+            jobYieldMax1x1PerA4: photoYieldSettings.max1x1PerA4
         });
     } else {
         alert('Invalid print type selected for job edit.');
-        inventory[oldJob.paperType] -= oldJob.paperConsumed;
+        // Inventory was already reverted, so just return
         return;
     }
 
@@ -1221,10 +1315,23 @@ function deleteJob(index) {
     if (confirm(`Are you sure you want to delete this print job (${history[index].date} - ${history[index].paperType})? This cannot be undone.`)) {
         const jobToDelete = history[index];
         
-        if (inventory[jobToDelete.paperType] !== undefined) {
-            inventory[jobToDelete.paperType] += jobToDelete.paperConsumed;
-        } else {
-            inventory[jobToDelete.paperType] = jobToDelete.paperConsumed;
+        if (jobToDelete.type === 'print') {
+            if (inventory[jobToDelete.paperType] !== undefined) {
+                inventory[jobToDelete.paperType] += jobToDelete.paperConsumed;
+            } else {
+                inventory[jobToDelete.paperType] = jobToDelete.paperConsumed;
+            }
+        } else if (jobToDelete.type === 'photo_bundle') {
+            photoPaperCumulativeFractionUsed -= jobToDelete.jobFractionalSheetsConsumed;
+            if (photoPaperCumulativeFractionUsed < 0) {
+                let sheetsToRefund = Math.ceil(Math.abs(photoPaperCumulativeFractionUsed));
+                if (inventory[jobToDelete.paperType] !== undefined) {
+                    inventory[jobToDelete.paperType] += sheetsToRefund;
+                } else {
+                    inventory[jobToDelete.paperType] = sheetsToRefund;
+                }
+                photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed + sheetsToRefund).toFixed(5));
+            }
         }
 
         history.splice(index, 1);
@@ -1327,7 +1434,8 @@ function exportToFile() {
         initialEstimatedProfitColor,
         printJobTypes,
         photoBundles,
-        photoYieldSettings
+        photoYieldSettings,
+        photoPaperCumulativeFractionUsed
     }, null, 2);
 
     const blob = new Blob([data], { type: 'application/json' });

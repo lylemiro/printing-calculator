@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>KimArts Print Ads</title> <!-- CHANGED TITLE -->
+  <title>KimArts Print Ads</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>📄 KimArts Print Ads</header> <!-- CHANGED HEADER TEXT -->
+  <header>📄 KimArts Print Ads</header>
   <main>
     <section>
       <h2>Inventory</h2>
@@ -20,7 +20,8 @@
       <p>Total Estimated Profit B&W: ₱<span id="estProfitBW">0</span></p>
       <p>Total Estimated Profit Colored: ₱<span id="estProfitColor">0</span></p>
       
-      <div id="inventoryControlButtons">
+      <!-- Inventory Control Buttons - Now a flex column -->
+      <div id="inventoryControlButtons" class="button-group-vertical">
         <button id="editInventoryBtn" onclick="toggleEditMode()">Edit Inventory</button>
         <button id="addPaperTypeBtn" onclick="showAddPaperModal()">Add New Paper Type</button>
         <button id="resetInventoryBtn" onclick="resetInventory()">Reset Inventory</button>
@@ -59,8 +60,11 @@
         <button id="addBundleJobBtn" onclick="addPhotoBundleJob()">Add Bundle Job</button>
       </div>
       
-      <button onclick="showManagePrintTypesModal()">Manage Print Types</button>
-      <button onclick="showManagePhotoBundlesModal()">Manage Photo ID Bundles</button>
+      <!-- Print Job Management Buttons - Now a flex column -->
+      <div class="button-group-vertical">
+        <button onclick="showManagePrintTypesModal()">Manage Print Types</button>
+        <button onclick="showManagePhotoBundlesModal()">Manage Photo ID Bundles</button>
+      </div>
     </section>
 
     <section id="summarySection" style="grid-column: span 2;">
@@ -68,10 +72,14 @@
       <label>Filter by Date Range:</label>
       <input type="date" id="startDate">
       <input type="date" id="endDate">
-      <button onclick="filterByDate()">Apply Filter</button>
-      <button onclick="clearDateFilter()">Clear Filter</button>
-      <button onclick="exportToFile()">Save to File</button>
-      <button onclick="printSummaryReport()">Print Report</button>
+      
+      <!-- Summary Control Buttons - Now a flex column -->
+      <div class="button-group-vertical">
+        <button onclick="filterByDate()">Apply Filter</button>
+        <button onclick="clearDateFilter()">Clear Filter</button>
+        <button onclick="exportToFile()">Save to File</button>
+        <button onclick="printSummaryReport()">Print Report</button>
+      </div>
 
       <p id="filterDisplay">Showing all data.</p>
 
@@ -188,11 +196,17 @@
     <div id="managePhotoBundlesModalContent">
       <h2>Manage Photo ID Bundles</h2>
       <div class="modal-section">
-        <h3>Photo Sheet Yields (per A4 Sticker Photo Paper)</h3>
+        <h3>Photo Bundle Yield Settings</h3>
         <label>Paper Type for Bundles:
-          <select id="photoBundlePaperType" onchange="updatePhotoSheetYields()"></select>
+          <select id="photoBundlePaperType" onchange="updatePhotoYieldSettings()"></select>
         </label>
-        <label>Bundles per Sheet: <input type="number" id="bundlesPerSheet" value="0" onchange="updatePhotoSheetYields()"></label>
+        <label>Max 2x2s per A4: <input type="number" id="max2x2PerA4" value="0" onchange="updatePhotoYieldSettings()"></label>
+        <label>Max 1x1s per A4: <input type="number" id="max1x1PerA4" value="0" onchange="updatePhotoYieldSettings()"></label>
+        <p class="yield-explanation">
+          * Enter the maximum number of individual 2x2s and 1x1s that fit on ONE sheet of the selected paper type.
+          <br>
+          * Example: If 4 Set C bundles (each with 4 2x2s and 8 1x1s) fit on one A4, then 16 2x2s and 32 1x1s fit on an A4. You'd enter 16 for 2x2s and 32 for 1x1s.
+        </p>
       </div>
       <div class="modal-section">
         <h3>Existing Bundles</h3>

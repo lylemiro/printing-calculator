@@ -131,7 +131,7 @@ li {
   background: #fdfdfd;
   margin-bottom: 6px;
   padding: 10px;
-  border-left: 44px solid #5b9bd5;
+  border-left: 4px solid #5b9bd5;
   border-radius: 4px;
   font-size: 0.95rem;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
@@ -260,7 +260,9 @@ p span {
 #addPaperModalOverlay { z-index: 1010; }
 #managePrintTypesModalOverlay { z-index: 1020; }
 #managePhotoBundlesModalOverlay { z-index: 1030; }
-#editJobModalOverlay { z-index: 1040; } /* Highest z-index for edit job modal */
+#editJobModalOverlay { z-index: 1040; }
+#addBundleJobModalOverlay { z-index: 1050; } /* Highest z-index for add bundle job modal */
+
 
 #setupModalOverlay, #addPaperModalOverlay, #managePrintTypesModalOverlay, #editJobModalOverlay, #addBundleJobModalOverlay, #managePhotoBundlesModalOverlay {
   position: fixed;
@@ -288,9 +290,11 @@ p span {
   border-radius: 10px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   width: 90%;
-  max-width: 500px;
+  max-width: 700px; /* Increased max-width for landscape view */
   transform: translateY(-20px);
   transition: transform 0.3s ease;
+  max-height: 90vh; /* Limit height to prevent overflow on smaller screens */
+  overflow-y: auto; /* Enable scrolling if content exceeds max-height */
 }
 
 #setupModalOverlay.show #setupModalContent,
@@ -411,6 +415,9 @@ p span {
     padding: 5px;
     font-size: 0.9rem;
 }
+#photoBundleManagementList li input.bundle-name-input {
+    width: 120px;
+}
 #printTypeManagementList li .item-actions button,
 #photoBundleManagementList li .item-actions button {
     padding: 4px 8px;
@@ -441,6 +448,28 @@ p span {
 .job-history-item .job-actions button.delete-job-btn {
     background: #e74c3c;
 }
-.job-history-item .item-actions button.delete-job-btn:hover {
+.job-history-item .job-actions button.delete-job-btn:hover {
     background: #c0392b;
+}
+
+.yield-explanation {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: -10px;
+    margin-bottom: 15px;
+    line-height: 1.4;
+    padding-left: 5px;
+    border-left: 3px solid #ddd;
+}
+
+/* Button Group Vertical Styling */
+.button-group-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Space between buttons */
+    margin-top: 15px; /* Space from elements above */
+}
+.button-group-vertical button {
+    width: 100%; /* Make buttons take full width of their container */
+    margin: 0; /* Override individual button margins */
 }
