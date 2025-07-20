@@ -131,7 +131,7 @@ li {
   background: #fdfdfd;
   margin-bottom: 6px;
   padding: 10px;
-  border-left: 4px solid #5b9bd5;
+  border-left: 44px solid #5b9bd5;
   border-radius: 4px;
   font-size: 0.95rem;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
@@ -256,7 +256,13 @@ p span {
 }
 
 /* --- Modal Styles (General) --- */
-#setupModalOverlay, #addPaperModalOverlay, #managePrintTypesModalOverlay {
+#setupModalOverlay { z-index: 1000; }
+#addPaperModalOverlay { z-index: 1010; }
+#managePrintTypesModalOverlay { z-index: 1020; }
+#managePhotoBundlesModalOverlay { z-index: 1030; }
+#editJobModalOverlay { z-index: 1040; } /* Highest z-index for edit job modal */
+
+#setupModalOverlay, #addPaperModalOverlay, #managePrintTypesModalOverlay, #editJobModalOverlay, #addBundleJobModalOverlay, #managePhotoBundlesModalOverlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -266,18 +272,17 @@ p span {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
-#setupModalOverlay.show, #addPaperModalOverlay.show, #managePrintTypesModalOverlay.show {
+#setupModalOverlay.show, #addPaperModalOverlay.show, #managePrintTypesModalOverlay.show, #editJobModalOverlay.show, #addBundleJobModalOverlay.show, #managePhotoBundlesModalOverlay.show {
   opacity: 1;
   visibility: visible;
 }
 
-#setupModalContent, #addPaperModalContent, #managePrintTypesModalContent {
+#setupModalContent, #addPaperModalContent, #managePrintTypesModalContent, #editJobModalContent, #addBundleJobModalContent, #managePhotoBundlesModalContent {
   background: white;
   padding: 30px;
   border-radius: 10px;
@@ -290,32 +295,35 @@ p span {
 
 #setupModalOverlay.show #setupModalContent,
 #addPaperModalOverlay.show #addPaperModalContent,
-#managePrintTypesModalOverlay.show #managePrintTypesModalContent {
+#managePrintTypesModalOverlay.show #managePrintTypesModalContent,
+#editJobModalOverlay.show #editJobModalContent,
+#addBundleJobModalOverlay.show #addBundleJobModalContent,
+#managePhotoBundlesModalOverlay.show #managePhotoBundlesModalContent {
   transform: translateY(0);
 }
 
-#setupModalContent h2, #addPaperModalContent h2, #managePrintTypesModalContent h2 {
+#setupModalContent h2, #addPaperModalContent h2, #managePrintTypesModalContent h2, #editJobModalContent h2, #addBundleJobModalContent h2, #managePhotoBundlesModalContent h2 {
   text-align: center;
   margin-bottom: 20px;
   color: #2c3e50;
 }
 
-#setupModalContent label, #addPaperModalContent label, #managePrintTypesModalContent label {
+#setupModalContent label, #addPaperModalContent label, #managePrintTypesModalContent label, #editJobModalContent label, #addBundleJobModalContent label, #managePhotoBundlesModalContent label {
   margin-bottom: 15px;
 }
 
-#setupModalContent button, #addPaperModalContent button, #managePrintTypesModalContent button {
+#setupModalContent button, #addPaperModalContent button, #managePrintTypesModalContent button, #editJobModalContent button, #addBundleJobModalContent button, #managePhotoBundlesModalContent button {
   width: 100%;
   margin-top: 20px;
   padding: 12px;
   font-size: 1.1rem;
 }
-#managePrintTypesModalContent .modal-buttons {
+#managePrintTypesModalContent .modal-buttons, #editJobModalContent .modal-buttons, #addBundleJobModalContent .modal-buttons, #managePhotoBundlesModalContent .modal-buttons {
     display: flex;
     gap: 10px;
     margin-top: 20px;
 }
-#managePrintTypesModalContent .modal-buttons button {
+#managePrintTypesModalContent .modal-buttons button, #editJobModalContent .modal-buttons button, #addBundleJobModalContent .modal-buttons button, #managePhotoBundlesModalContent .modal-buttons button {
     flex: 1;
     margin: 0;
 }
@@ -367,7 +375,7 @@ p span {
 }
 
 /* Print Job Type Management Modal specific styles */
-#printTypeManagementList {
+#printTypeManagementList, #photoBundleManagementList {
     list-style: none;
     padding: 0;
     max-height: 250px;
@@ -376,32 +384,63 @@ p span {
     border-radius: 6px;
     margin-top: 15px;
 }
-#printTypeManagementList li {
+#printTypeManagementList li, #photoBundleManagementList li {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 8px 10px;
     border-bottom: 1px solid #eee;
     background: #fdfdfd;
+    flex-wrap: wrap;
+    gap: 5px;
 }
-#printTypeManagementList li:last-child {
+#printTypeManagementList li:last-child, #photoBundleManagementList li:last-child {
     border-bottom: none;
 }
-#printTypeManagementList li span {
+#printTypeManagementList li span, #photoBundleManagementList li span {
     flex-grow: 1;
     font-weight: 500;
 }
 #printTypeManagementList li input[type="text"],
-#printTypeManagementList li input[type="number"] {
-    width: 100px;
-    margin-right: 10px;
+#printTypeManagementList li input[type="number"],
+#photoBundleManagementList li input[type="text"],
+#photoBundleManagementList li input[type="number"] {
+    width: 80px;
+    margin-right: 5px;
     margin-bottom: 0;
     padding: 5px;
     font-size: 0.9rem;
 }
-#printTypeManagementList li .item-actions button {
+#printTypeManagementList li .item-actions button,
+#photoBundleManagementList li .item-actions button {
     padding: 4px 8px;
     font-size: 0.75rem;
     margin: 0 2px;
     width: auto;
+}
+
+/* Job History List Item Buttons */
+.job-history-item .job-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+}
+.job-history-item .job-actions button {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    margin: 0;
+    width: auto;
+    box-shadow: none;
+}
+.job-history-item .job-actions button.edit-job-btn {
+    background: #f39c12;
+}
+.job-history-item .job-actions button.edit-job-btn:hover {
+    background: #e67e22;
+}
+.job-history-item .job-actions button.delete-job-btn {
+    background: #e74c3c;
+}
+.job-history-item .item-actions button.delete-job-btn:hover {
+    background: #c0392b;
 }

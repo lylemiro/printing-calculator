@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Printing Calculator</title>
+  <title>KimArts Print Ads</title> <!-- CHANGED TITLE -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="style.css"> <!-- LINK TO CSS -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>📄 Printing Calculator</header>
+  <header>📄 KimArts Print Ads</header> <!-- CHANGED HEADER TEXT -->
   <main>
     <section>
       <h2>Inventory</h2>
@@ -36,16 +36,31 @@
         </select>
       </label>
       <label>Print Type:
-        <select id="printType">
+        <select id="printType" onchange="togglePrintJobInputs()">
           <!-- Options will be dynamically populated from printJobTypes -->
         </select>
       </label>
-      <label>B&W Pages: <input type="number" id="bw" value="0" oninput="toggleAddPrintJobButton()"></label>
-      <label>Colored Pages: <input type="number" id="colored" value="0" oninput="toggleAddPrintJobButton()"></label>
-      <label>Rejected B&W: <input type="number" id="rejectedBW" value="0" oninput="toggleAddPrintJobButton()"></label>
-      <label>Rejected Colored: <input type="number" id="rejectedColor" value="0" oninput="toggleAddPrintJobButton()"></label>
-      <button id="addPrintJobBtn" onclick="addPrintJob()">Add Print Job</button>
+
+      <!-- Standard Print Job Inputs -->
+      <div id="standardPrintInputs">
+        <label>B&W Pages: <input type="number" id="bw" value="0" oninput="toggleAddPrintJobButton()"></label>
+        <label>Colored Pages: <input type="number" id="colored" value="0" oninput="toggleAddPrintJobButton()"></label>
+        <label>Rejected B&W: <input type="number" id="rejectedBW" value="0" oninput="toggleAddPrintJobButton()"></label>
+        <label>Rejected Colored: <input type="number" id="rejectedColor" value="0" oninput="toggleAddPrintJobButton()"></label>
+        <button id="addPrintJobBtn" onclick="addStandardPrintJob()">Add Print Job</button>
+      </div>
+
+      <!-- Photo Bundle Job Inputs (Initially hidden) -->
+      <div id="photoBundleInputs" style="display: none;">
+        <label>Select Bundle:
+          <select id="bundleTypeSelect"></select>
+        </label>
+        <label>Quantity of Bundles: <input type="number" id="bundleQuantity" value="1"></label>
+        <button id="addBundleJobBtn" onclick="addPhotoBundleJob()">Add Bundle Job</button>
+      </div>
+      
       <button onclick="showManagePrintTypesModal()">Manage Print Types</button>
+      <button onclick="showManagePhotoBundlesModal()">Manage Photo ID Bundles</button>
     </section>
 
     <section id="summarySection" style="grid-column: span 2;">
@@ -115,7 +130,15 @@
       <div class="modal-section">
         <h3>Add New Type</h3>
         <label>Type Name: <input type="text" id="newPrintTypeName" placeholder="e.g., Large Format"></label>
+        <label>Type:
+          <select id="newPrintJobTypeCategory">
+            <option value="standard">Standard Print</option>
+            <option value="photo_bundle">Photo Bundle</option>
+          </select>
+        </label>
         <label>Price Multiplier: <input type="number" step="0.01" id="newPrintTypeMultiplier" value="1.0"></label>
+        <label>Base Price: ₱<input type="number" step="0.01" id="newPrintTypeBasePrice" value="0.0"></label>
+        <label>Bundle Quantity: <input type="number" id="newPrintTypeBundleQuantity" value="0"></label>
         <button onclick="addNewPrintType()">Add New Type</button>
       </div>
       <div class="modal-buttons">
@@ -124,6 +147,74 @@
     </div>
   </div>
 
-  <script src="script.js"></script> <!-- LINK TO JAVASCRIPT -->
+  <!-- Edit Job Modal HTML -->
+  <div id="editJobModalOverlay">
+    <div id="editJobModalContent">
+      <h2>Edit Print Job</h2>
+      <p>Editing Job ID: <span id="editJobIndexDisplay"></span></p>
+      <label>Date: <input type="date" id="editJobDate"></label>
+      <label>Paper Type:
+        <select id="editJobPaperType">
+          <!-- Options will be dynamically populated -->
+        </select>
+      </label>
+      <label>Print Type:
+        <select id="editJobPrintType">
+          <!-- Options will be dynamically populated -->
+        </select>
+      </label>
+
+      <!-- Fields for Standard Print Job Edit -->
+      <div id="editStandardPrintFields">
+        <label>B&W Pages: <input type="number" id="editJobBW"></label>
+        <label>Colored Pages: <input type="number" id="editJobColored"></label>
+        <label>Rejected B&W: <input type="number" id="editJobRejectedBW"></label>
+        <label>Rejected Colored: <input type="number" id="editJobRejectedColor"></label>
+      </div>
+
+      <!-- Fields for Photo Bundle Job Edit -->
+      <div id="editPhotoBundleFields" style="display: none;">
+        <label>Bundle Name: <select id="editJobBundleName"></select></label>
+        <label>Bundle Quantity: <input type="number" id="editJobBundleQuantity"></label>
+      </div>
+
+      <button onclick="saveEditedJob()">Save Changes</button>
+      <button onclick="hideEditJobModal()" style="background: #ccc; margin-top: 10px;">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Manage Photo ID Bundles Modal HTML -->
+  <div id="managePhotoBundlesModalOverlay">
+    <div id="managePhotoBundlesModalContent">
+      <h2>Manage Photo ID Bundles</h2>
+      <div class="modal-section">
+        <h3>Photo Sheet Yields (per A4 Sticker Photo Paper)</h3>
+        <label>Paper Type for Bundles:
+          <select id="photoBundlePaperType" onchange="updatePhotoSheetYields()"></select>
+        </label>
+        <label>Bundles per Sheet: <input type="number" id="bundlesPerSheet" value="0" onchange="updatePhotoSheetYields()"></label>
+      </div>
+      <div class="modal-section">
+        <h3>Existing Bundles</h3>
+        <ul id="photoBundleManagementList">
+          <!-- Dynamically populated -->
+        </ul>
+        <button onclick="saveAllPhotoBundleChanges()">Save Bundle Changes</button>
+      </div>
+      <div class="modal-section">
+        <h3>Add New Bundle</h3>
+        <label>Bundle Name: <input type="text" id="newBundleName" placeholder="e.g., Set A"></label>
+        <label>Price: ₱<input type="number" step="0.01" id="newBundlePrice" value="0.0"></label>
+        <label>2x2 Photos: <input type="number" id="newBundle2x2Count" value="0"></label>
+        <label>1x1 Photos: <input type="number" id="newBundle1x1Count" value="0"></label>
+        <button onclick="addNewPhotoBundle()">Add New Bundle</button>
+      </div>
+      <div class="modal-buttons">
+        <button onclick="hideManagePhotoBundlesModal()" style="background: #ccc;">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>

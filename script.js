@@ -9,6 +9,10 @@ let initialEstimatedProfitColor = 0;
 let isEditingInventory = false;
 
 let printJobTypes = {};
+let photoBundles = {};
+let photoYieldSettings = { bundlesPerSheet: 0, paperType: 'A4 Sticker Photo Paper' };
+
+let currentEditingJobIndex = -1;
 
 // --- Setup Modal Functions ---
 function showSetupModal() {
@@ -108,7 +112,13 @@ function renderPrintTypeManagementList() {
         li.dataset.originalName = type;
         li.innerHTML = `
             <input type="text" class="print-type-name-input" value="${type}">
+            <label>Type: <select class="print-type-category-input">
+                <option value="standard" ${printJobTypes[type].type === 'standard' ? 'selected' : ''}>Standard Print</option>
+                <option value="photo_bundle" ${printJobTypes[type].type === 'photo_bundle' ? 'selected' : ''}>Photo Bundle</option>
+            </select></label>
             <label>Multiplier: <input type="number" step="0.01" class="print-type-multiplier-input" value="${printJobTypes[type].multiplier}"></label>
+            <label>Base Price: ₱<input type="number" step="0.01" class="print-type-base-price-input" value="${printJobTypes[type].basePrice}"></label>
+            <label>Bundle Qty: <input type="number" class="print-type-bundle-qty-input" value="${printJobTypes[type].bundleQuantity}"></label>
             <div class="item-actions">
                 <button class="delete-btn" onclick="deletePrintTypeFromModal('${type}')">Delete</button>
             </div>
@@ -119,7 +129,11 @@ function renderPrintTypeManagementList() {
 
 function addNewPrintType() {
     const newTypeName = document.getElementById('newPrintTypeName').value.trim();
+    const newTypeCategory = document.getElementById('newPrintJobTypeCategory').value;
     const newTypeMultiplier = Math.max(0, parseFloat(document.getElementById('newPrintTypeMultiplier').value) || 0);
+    const newTypeBasePrice = Math.max(0, parseFloat(document.getElementById('newPrintTypeBasePrice').value) || 0);
+    const newTypeBundleQuantity = Math.max(0, parseInt(document.getElementById('newPrintTypeBundleQuantity').value) || 0);
+
 
     if (!newTypeName) {
         alert('Please enter a name for the new print type.');
@@ -130,12 +144,20 @@ function addNewPrintType() {
         return;
     }
 
-    printJobTypes[newTypeName] = { multiplier: newTypeMultiplier };
+    printJobTypes[newTypeName] = { 
+        type: newTypeCategory,
+        multiplier: newTypeMultiplier,
+        basePrice: newTypeBasePrice,
+        bundleQuantity: newTypeBundleQuantity
+    };
     saveData();
     renderPrintTypeManagementList();
     populatePrintTypeDropdown();
     document.getElementById('newPrintTypeName').value = '';
+    document.getElementById('newPrintJobTypeCategory').value = 'standard';
     document.getElementById('newPrintTypeMultiplier').value = 1.0;
+    document.getElementById('newPrintTypeBasePrice').value = 0.0;
+    document.getElementById('newPrintTypeBundleQuantity').value = 0;
     alert(`Print type "${newTypeName}" added.`);
 }
 
@@ -143,7 +165,7 @@ function deletePrintTypeFromModal(typeToDelete) {
     if (confirm(`Are you sure you want to delete print type "${typeToDelete}"? This cannot be undone.`)) {
         const hasHistoricalJobs = history.some(job => job.printType === typeToDelete);
         if (hasHistoricalJobs) {
-            if (!confirm(`Print type "${typeToDelete}" has associated job history. Deleting it will keep historical records but future calculations might be affected if you re-add it with different properties. Continue?`)) {
+            if (!confirm(`"${typeToDelete}" has associated job history. Deleting it will keep historical records but future calculations might be affected if you re-add it with different properties. Continue?`)) {
                 return;
             }
         }
@@ -163,10 +185,16 @@ function saveAllPrintTypeChanges() {
     listItems.forEach(li => {
         const oldName = li.dataset.originalName;
         const newNameInput = li.querySelector('.print-type-name-input');
+        const newCategoryInput = li.querySelector('.print-type-category-input');
         const newMultiplierInput = li.querySelector('.print-type-multiplier-input');
+        const newBasePriceInput = li.querySelector('.print-type-base-price-input');
+        const newBundleQuantityInput = li.querySelector('.print-type-bundle-qty-input');
 
         const newName = newNameInput.value.trim();
+        const newCategory = newCategoryInput.value;
         const newMultiplier = Math.max(0, parseFloat(newMultiplierInput.value) || 0);
+        const newBasePrice = Math.max(0, parseFloat(newBasePriceInput.value) || 0);
+        const newBundleQuantity = Math.max(0, parseInt(newBundleQuantityInput.value) || 0);
 
         if (!newName) {
             alert('Print type name cannot be empty.');
@@ -184,7 +212,12 @@ function saveAllPrintTypeChanges() {
              return;
         }
 
-        updatedPrintJobTypes[newName] = { multiplier: newMultiplier };
+        updatedPrintJobTypes[newName] = { 
+            type: newCategory,
+            multiplier: newMultiplier,
+            basePrice: newBasePrice,
+            bundleQuantity: newBundleQuantity
+        };
         
         if (newName !== oldName) {
             history.forEach(job => {
@@ -205,6 +238,168 @@ function saveAllPrintTypeChanges() {
 }
 
 
+// --- Photo Bundle Management Modal Functions ---
+function showManagePhotoBundlesModal() {
+    document.getElementById('managePhotoBundlesModalOverlay').classList.add('show');
+    
+    const photoBundlePaperTypeSelect = document.getElementById('photoBundlePaperType');
+    photoBundlePaperTypeSelect.innerHTML = '';
+    const sortedPaperTypes = Object.keys(inventory).sort();
+    sortedPaperTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        photoBundlePaperTypeSelect.appendChild(option);
+    });
+    photoBundlePaperTypeSelect.value = photoYieldSettings.paperType;
+    
+    document.getElementById('bundlesPerSheet').value = photoYieldSettings.bundlesPerSheet;
+    renderPhotoBundleManagementList();
+}
+
+function hideManagePhotoBundlesModal() {
+    document.getElementById('managePhotoBundlesModalOverlay').classList.remove('show');
+}
+
+function updatePhotoSheetYields() {
+    photoYieldSettings.bundlesPerSheet = Math.max(0, parseInt(document.getElementById('bundlesPerSheet').value) || 0);
+    photoYieldSettings.paperType = document.getElementById('photoBundlePaperType').value;
+    saveData();
+    alert('Photo sheet yields updated.');
+}
+
+function renderPhotoBundleManagementList() {
+    const listElement = document.getElementById('photoBundleManagementList');
+    listElement.innerHTML = '';
+
+    for (const bundleName in photoBundles) {
+        const bundle = photoBundles[bundleName];
+        const li = document.createElement('li');
+        li.dataset.originalName = bundleName;
+        li.innerHTML = `
+            <input type="text" class="bundle-name-input" value="${bundleName}">
+            <label>Price: ₱<input type="number" step="0.01" class="bundle-price-input" value="${bundle.price}"></label>
+            <label>2x2: <input type="number" class="bundle-2x2-input" value="${bundle.composition['2x2'] || 0}"></label>
+            <label>1x1: <input type="number" class="bundle-1x1-input" value="${bundle.composition['1x1'] || 0}"></label>
+            <div class="item-actions">
+                <button class="delete-btn" onclick="deletePhotoBundle('${bundleName}')">Delete</button>
+            </div>
+        `;
+        listElement.appendChild(li);
+    }
+}
+
+function addNewPhotoBundle() {
+    const newBundleName = document.getElementById('newBundleName').value.trim();
+    const newBundlePrice = Math.max(0, parseFloat(document.getElementById('newBundlePrice').value) || 0);
+    const newBundle2x2Count = Math.max(0, parseInt(document.getElementById('newBundle2x2Count').value) || 0);
+    const newBundle1x1Count = Math.max(0, parseInt(document.getElementById('newBundle1x1Count').value) || 0);
+
+    if (!newBundleName) {
+        alert('Please enter a name for the new bundle.');
+        return;
+    }
+    if (photoBundles.hasOwnProperty(newBundleName)) {
+        alert(`Bundle "${newBundleName}" already exists.`);
+        return;
+    }
+    if (newBundle2x2Count === 0 && newBundle1x1Count === 0) {
+        alert('A bundle must contain at least one 2x2 or 1x1 photo.');
+        return;
+    }
+
+    photoBundles[newBundleName] = {
+        price: newBundlePrice,
+        composition: { '2x2': newBundle2x2Count, '1x1': newBundle1x1Count }
+    };
+    saveData();
+    renderPhotoBundleManagementList();
+    populateBundleTypeDropdown();
+    document.getElementById('newBundleName').value = '';
+    document.getElementById('newBundlePrice').value = 0.0;
+    document.getElementById('newBundle2x2Count').value = 0;
+    document.getElementById('newBundle1x1Count').value = 0;
+    alert(`Bundle "${newBundleName}" added.`);
+}
+
+function deletePhotoBundle(bundleName) {
+    if (confirm(`Are you sure you want to delete bundle "${bundleName}"? This cannot be undone.`)) {
+        const hasHistoricalJobs = history.some(job => job.type === 'photo_bundle' && job.bundleName === bundleName);
+        if (hasHistoricalJobs) {
+            if (!confirm(`Bundle "${bundleName}" has associated job history. Deleting it will keep historical records. Continue?`)) {
+                return;
+            }
+        }
+        delete photoBundles[bundleName];
+        saveData();
+        renderPhotoBundleManagementList();
+        populateBundleTypeDropdown();
+        alert(`Bundle "${bundleName}" deleted.`);
+    }
+}
+
+function saveAllPhotoBundleChanges() {
+    const listItems = document.querySelectorAll('#photoBundleManagementList li');
+    const updatedPhotoBundles = {};
+    let hasError = false;
+
+    listItems.forEach(li => {
+        const oldName = li.dataset.originalName;
+        const newNameInput = li.querySelector('.bundle-name-input');
+        const newPriceInput = li.querySelector('.bundle-price-input');
+        const new2x2Input = li.querySelector('.bundle-2x2-input');
+        const new1x1Input = li.querySelector('.bundle-1x1-input');
+
+        const newName = newNameInput.value.trim();
+        const newPrice = Math.max(0, parseFloat(newPriceInput.value) || 0);
+        const new2x2Count = Math.max(0, parseInt(new2x2Input.value) || 0);
+        const new1x1Count = Math.max(0, parseInt(new1x1Input.value) || 0);
+
+        if (!newName) {
+            alert('Bundle name cannot be empty.');
+            hasError = true;
+            return;
+        }
+        if (updatedPhotoBundles.hasOwnProperty(newName) && newName !== oldName) {
+            alert(`Error: Duplicate bundle name "${newName}". All bundles must have unique names.`);
+            hasError = true;
+            return;
+        }
+        if (newName !== oldName && photoBundles.hasOwnProperty(newName) && !Array.from(listItems).some(el => el.dataset.originalName === newName)) {
+            alert(`Error: Bundle "${newName}" already exists. Please choose a different name.`);
+            hasError = true;
+            return;
+        }
+        if (new2x2Count === 0 && new1x1Count === 0) {
+            alert('A bundle must contain at least one 2x2 or 1x1 photo.');
+            hasError = true;
+            return;
+        }
+
+        updatedPhotoBundles[newName] = {
+            price: newPrice,
+            composition: { '2x2': new2x2Count, '1x1': new1x1Count }
+        };
+
+        if (newName !== oldName) {
+            history.forEach(job => {
+                if (job.type === 'photo_bundle' && job.bundleName === oldName) {
+                    job.bundleName = newName;
+                }
+            });
+        }
+    });
+
+    if (hasError) return;
+
+    photoBundles = updatedPhotoBundles;
+    saveData();
+    updateDisplay();
+    renderPhotoBundleManagementList();
+    alert('Photo bundles updated successfully!');
+}
+
+
 // --- Data Loading & Saving ---
 function loadData() {
     const storedInventory = localStorage.getItem('inventory');
@@ -214,6 +409,8 @@ function loadData() {
     const storedInitialEstProfitBW = localStorage.getItem('initialEstimatedProfitBW');
     const storedInitialEstProfitColor = localStorage.getItem('initialEstimatedProfitColor');
     const storedPrintJobTypes = localStorage.getItem('printJobTypes');
+    const storedPhotoBundles = localStorage.getItem('photoBundles');
+    const storedPhotoYieldSettings = localStorage.getItem('photoYieldSettings');
 
     if (storedInventory) {
         inventory = JSON.parse(storedInventory);
@@ -230,7 +427,28 @@ function loadData() {
     if (storedPrintJobTypes) {
         printJobTypes = JSON.parse(storedPrintJobTypes);
     } else {
-        printJobTypes = { "Single-sided": { multiplier: 1 }, "Double-sided": { multiplier: 2 } };
+        printJobTypes = { 
+            "Single-sided": { type: 'standard', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
+            "Double-sided": { type: 'standard', multiplier: 2, basePrice: 0, bundleQuantity: 0 },
+            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
+        };
+    }
+
+    if (storedPhotoBundles) {
+        photoBundles = JSON.parse(storedPhotoBundles);
+    } else {
+        photoBundles = {
+            "Set A": { price: 40, composition: { '2x2': 2, '1x1': 8 } },
+            "Set B": { price: 40, composition: { '2x2': 3, '1x1': 4 } },
+            "Set C": { price: 50, composition: { '2x2': 4, '1x1': 8 } },
+            "Set D": { price: 40, composition: { '2x2': 4, '1x1': 0 } }
+        };
+    }
+
+    if (storedPhotoYieldSettings) {
+        photoYieldSettings = JSON.parse(storedPhotoYieldSettings);
+    } else {
+        photoYieldSettings = { bundlesPerSheet: 4, paperType: 'A4 Sticker Photo Paper' };
     }
 }
 
@@ -242,6 +460,8 @@ function saveData() {
     localStorage.setItem('initialEstimatedProfitBW', initialEstimatedProfitBW);
     localStorage.setItem('initialEstimatedProfitColor', initialEstimatedProfitColor);
     localStorage.setItem('printJobTypes', JSON.stringify(printJobTypes));
+    localStorage.setItem('photoBundles', JSON.stringify(photoBundles));
+    localStorage.setItem('photoYieldSettings', JSON.stringify(photoYieldSettings));
 }
 
 function calculateInitialEstimatedProfit() {
@@ -409,7 +629,24 @@ function populatePrintTypeDropdown() {
         option.textContent = type;
         printTypeSelect.appendChild(option);
     });
+    printTypeSelect.onchange = togglePrintJobInputs;
+    togglePrintJobInputs();
 }
+
+function populateBundleTypeDropdown() {
+    const bundleTypeSelect = document.getElementById('bundleTypeSelect');
+    bundleTypeSelect.innerHTML = '';
+
+    const sortedBundleTypes = Object.keys(photoBundles).sort();
+
+    sortedBundleTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        bundleTypeSelect.appendChild(option);
+    });
+}
+
 
 // --- Initialization on DOM Load ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -432,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('colored').addEventListener('input', toggleAddPrintJobButton);
     document.getElementById('rejectedBW').addEventListener('input', toggleAddPrintJobButton);
     document.getElementById('rejectedColor').addEventListener('input', toggleAddPrintJobButton);
-    toggleAddPrintJobButton(); // Initial call to set button state on load
+    toggleAddPrintJobButton();
 });
 
 // --- Main Display Update ---
@@ -440,6 +677,7 @@ function updateDisplay() {
     renderInventory();
     populatePaperTypeDropdown();
     populatePrintTypeDropdown();
+    populateBundleTypeDropdown();
     
     document.getElementById('priceBW').value = priceBW;
     document.getElementById('priceColor').value = priceColor;
@@ -454,7 +692,18 @@ function updateDisplay() {
 function resetInventory() {
     if (confirm("Are you sure you want to reset all inventory counts? This will clear all job history and reset initial profit estimations.")) {
         inventory = { "A4": 500, "Letter": 500, "Legal": 500 };
-        printJobTypes = { "Single-sided": { multiplier: 1 }, "Double-sided": { multiplier: 2 } };
+        printJobTypes = { 
+            "Single-sided": { type: 'standard', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
+            "Double-sided": { type: 'standard', multiplier: 2, basePrice: 0, bundleQuantity: 0 },
+            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
+        };
+        photoBundles = {
+            "Set A": { price: 40, composition: { '2x2': 2, '1x1': 8 } },
+            "Set B": { price: 40, composition: { '2x2': 3, '1x1': 4 } },
+            "Set C": { price: 50, composition: { '2x2': 4, '1x1': 8 } },
+            "Set D": { price: 40, composition: { '2x2': 4, '1x1': 0 } }
+        };
+        photoYieldSettings = { bundlesPerSheet: 4, paperType: 'A4 Sticker Photo Paper' };
         history = [];
         
         localStorage.setItem('isSetupComplete', 'false');
@@ -471,8 +720,33 @@ function resetInventory() {
     }
 }
 
-// --- Add Print Job Function ---
-function addPrintJob() {
+// --- Toggle visibility of print job input fields based on print type category ---
+function togglePrintJobInputs() {
+    const selectedPrintTypeName = document.getElementById('printType').value;
+    const selectedPrintType = printJobTypes[selectedPrintTypeName];
+
+    const standardInputsDiv = document.getElementById('standardPrintInputs');
+    const photoBundleInputsDiv = document.getElementById('photoBundleInputs');
+    const addPrintJobButton = document.getElementById('addPrintJobBtn');
+    const addBundleJobButton = document.getElementById('addBundleJobBtn');
+
+    if (selectedPrintType && selectedPrintType.type === 'photo_bundle') {
+        standardInputsDiv.style.display = 'none';
+        photoBundleInputsDiv.style.display = 'block';
+        addPrintJobButton.style.display = 'none';
+        addBundleJobButton.style.display = 'inline-block';
+    } else {
+        standardInputsDiv.style.display = 'block';
+        photoBundleInputsDiv.style.display = 'none';
+        addPrintJobButton.style.display = 'inline-block';
+        addBundleJobButton.style.display = 'none';
+        toggleAddPrintJobButton();
+    }
+}
+
+
+// --- Add Standard Print Job Function ---
+function addStandardPrintJob() {
     const paperType = document.getElementById('paperType').value;
     const printTypeName = document.getElementById('printType').value;
     const bwPages = parseInt(document.getElementById('bw').value) || 0;
@@ -487,6 +761,8 @@ function addPrintJob() {
 
     const selectedPrintType = printJobTypes[printTypeName];
     const multiplier = selectedPrintType.multiplier;
+    const basePrice = selectedPrintType.basePrice;
+    const bundleQuantity = selectedPrintType.bundleQuantity;
 
     let paperConsumed = bwPages + coloredPages + rejectedBW + rejectedColor;
 
@@ -500,7 +776,24 @@ function addPrintJob() {
     let effectivePriceBW = priceBW * multiplier;
     let effectivePriceColor = priceColor * multiplier;
     
-    const totalCost = (bwPages * effectivePriceBW) + (coloredPages * effectivePriceColor);
+    let totalCost = basePrice;
+
+    let totalSuccessfulPages = bwPages + coloredPages;
+    let sheetsBeyondBundle = totalSuccessfulPages - bundleQuantity;
+
+    if (sheetsBeyondBundle > 0) {
+        if (totalSuccessfulPages > 0) {
+            const bwRatio = bwPages / totalSuccessfulPages;
+            const coloredRatio = coloredPages / totalSuccessfulPages;
+
+            totalCost += (sheetsBeyondBundle * bwRatio * effectivePriceBW) + (sheetsBeyondBundle * coloredRatio * effectivePriceColor);
+        }
+    } else {
+        if (basePrice === 0 && bundleQuantity === 0) {
+            totalCost += (bwPages * effectivePriceBW) + (coloredPages * effectivePriceColor);
+        }
+    }
+
 
     const lossBW = rejectedBW * priceBW;
     const lossColor = rejectedColor * priceColor;
@@ -509,6 +802,7 @@ function addPrintJob() {
     const netProfit = totalCost - totalLoss;
 
     const job = {
+        type: 'print',
         date: new Date().toISOString().split('T')[0],
         paperType,
         printType: printTypeName,
@@ -519,7 +813,10 @@ function addPrintJob() {
         paperConsumed,
         totalCost,
         totalLoss,
-        netProfit
+        netProfit,
+        jobTypeMultiplier: multiplier,
+        jobTypeBasePrice: basePrice,
+        jobTypeBundleQuantity: bundleQuantity
     };
 
     history.push(job);
@@ -532,10 +829,74 @@ function addPrintJob() {
     document.getElementById('colored').value = 0;
     document.getElementById('rejectedBW').value = 0;
     document.getElementById('rejectedColor').value = 0;
-    toggleAddPrintJobButton(); // Disable button after adding job
+    toggleAddPrintJobButton();
 }
 
-// --- Toggle Add Print Job Button State ---
+// --- Add Photo Bundle Job Function ---
+function addPhotoBundleJob() {
+    const bundleName = document.getElementById('bundleTypeSelect').value;
+    const bundleQty = Math.max(1, parseInt(document.getElementById('bundleQuantity').value) || 1);
+
+    if (!bundleName || !photoBundles.hasOwnProperty(bundleName)) {
+        alert('Please select a valid Photo ID Bundle.');
+        return;
+    }
+    if (bundleQty <= 0) {
+        alert('Bundle quantity must be at least 1.');
+        return;
+    }
+    if (photoYieldSettings.bundlesPerSheet <= 0) {
+        alert('Please set "Bundles per Sheet" in "Manage Photo ID Bundles" modal to calculate paper consumption.');
+        return;
+    }
+    const photoPaperType = photoYieldSettings.paperType;
+    if (inventory[photoPaperType] === undefined) {
+        alert(`"${photoPaperType}" is not in your inventory. Please add it via "Edit Inventory" or select a different paper type for photo bundles.`);
+        return;
+    }
+
+    const selectedBundle = photoBundles[bundleName];
+    const pricePerBundle = selectedBundle.price;
+
+    let sheetsConsumedByBundle = Math.ceil(bundleQty / photoYieldSettings.bundlesPerSheet);
+    
+    if (inventory[photoPaperType] < sheetsConsumedByBundle) {
+        alert(`Not enough "${photoPaperType}" paper! You need ${sheetsConsumedByBundle} sheets, but only have ${inventory[photoPaperType]}.`);
+        return;
+    }
+
+    inventory[photoPaperType] -= sheetsConsumedByBundle;
+
+    const totalCost = pricePerBundle * bundleQty;
+    const totalLoss = 0;
+    const netProfit = totalCost;
+
+    const job = {
+        type: 'photo_bundle',
+        date: new Date().toISOString().split('T')[0],
+        paperType: photoPaperType,
+        bundleName: bundleName,
+        bundleQuantity: bundleQty,
+        bundlePricePerUnit: pricePerBundle,
+        bundleComposition: selectedBundle.composition,
+        paperConsumed: sheetsConsumedByBundle,
+        totalCost: totalCost,
+        totalLoss: totalLoss,
+        netProfit: netProfit,
+        jobYieldBundlesPerSheet: photoYieldSettings.bundlesPerSheet
+    };
+
+    history.push(job);
+    saveData();
+    updateDisplay();
+    displayHistory();
+    renderChart();
+    hideAddBundleJobModal();
+    alert(`Added ${bundleQty} x "${bundleName}" job.`);
+}
+
+
+// --- Toggle Add Print Job Button State (for standard prints) ---
 function toggleAddPrintJobButton() {
     const bw = parseInt(document.getElementById('bw').value) || 0;
     const colored = parseInt(document.getElementById('colored').value) || 0;
@@ -544,15 +905,10 @@ function toggleAddPrintJobButton() {
     
     const addButton = document.getElementById('addPrintJobBtn');
 
-    // Debugging: Log values to console
-    console.log(`BW: ${bw}, Colored: ${colored}, RejectedBW: ${rejectedBW}, RejectedColor: ${rejectedColor}`);
-
     if (bw === 0 && colored === 0 && rejectedBW === 0 && rejectedColor === 0) {
         addButton.disabled = true;
-        console.log("Add Print Job button disabled.");
     } else {
         addButton.disabled = false;
-        console.log("Add Print Job button enabled.");
     }
 }
 
@@ -571,16 +927,317 @@ function displayHistory(filteredHistory = history) {
 
     sortedHistory.forEach((job, index) => {
         const listItem = document.createElement('li');
+        listItem.classList.add('job-history-item');
+
+        let jobDetailsHtml = '';
+        if (job.type === 'print') {
+            jobDetailsHtml = `
+                <strong>${job.date}</strong> - ${job.paperType.toUpperCase()} (${job.printType})<br>
+                B&W Sheets: ${job.bwPages} (Rejected: ${job.rejectedBW})<br>
+                Colored Sheets: ${job.coloredPages} (Rejected: ${job.rejectedColor})<br>
+                Total Sheets Used: ${job.paperConsumed}<br>
+                Profit: ₱${job.netProfit.toFixed(2)} | Loss: ₱${job.totalLoss.toFixed(2)}
+            `;
+        } else if (job.type === 'photo_bundle') {
+            const total2x2s = (job.bundleComposition['2x2'] || 0) * job.bundleQuantity;
+            const total1x1s = (job.bundleComposition['1x1'] || 0) * job.bundleQuantity;
+            jobDetailsHtml = `
+                <strong>${job.date}</strong> - ${job.bundleName} (x${job.bundleQuantity})<br>
+                Paper Type: ${job.paperType.toUpperCase()}<br>
+                Photos: 2x2: ${total2x2s} | 1x1: ${total1x1s}<br>
+                Total Sheets Used: ${job.paperConsumed}<br>
+                Profit: ₱${job.netProfit.toFixed(2)}
+            `;
+        }
+        
         listItem.innerHTML = `
-            <strong>${job.date}</strong> - ${job.paperType.toUpperCase()} (${job.printType})<br>
-            B&W Sheets: ${job.bwPages} (Rejected: ${job.rejectedBW})<br>
-            Colored Sheets: ${job.coloredPages} (Rejected: ${job.rejectedColor})<br>
-            Total Sheets Used: ${job.paperConsumed}<br>
-            Profit: ₱${job.netProfit.toFixed(2)} | Loss: ₱${job.totalLoss.toFixed(2)}
+            ${jobDetailsHtml}
+            <div class="job-actions">
+                <button class="edit-job-btn" onclick="showEditJobModal(${index})">Edit</button>
+                <button class="delete-job-btn" onclick="deleteJob(${index})">Delete</button>
+            </div>
         `;
-        historyList.appendChild(listItem); // Corrected this line
+        historyList.appendChild(listItem);
     });
 }
+
+// --- Edit/Delete Individual Job Functions ---
+function showEditJobModal(index) {
+    currentEditingJobIndex = index;
+    const job = history[index];
+
+    if (!job) {
+        alert('Job not found for editing.');
+        return;
+    }
+
+    document.getElementById('editJobIndexDisplay').textContent = index;
+    document.getElementById('editJobDate').value = job.date;
+
+    // Populate paper type dropdown for edit modal
+    const editJobPaperTypeSelect = document.getElementById('editJobPaperType');
+    editJobPaperTypeSelect.innerHTML = '';
+    const sortedPaperTypes = Object.keys(inventory).sort();
+    sortedPaperTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        editJobPaperTypeSelect.appendChild(option);
+    });
+    editJobPaperTypeSelect.value = job.paperType;
+
+    // Populate print type dropdown for edit modal
+    const editJobPrintTypeSelect = document.getElementById('editJobPrintType');
+    editJobPrintTypeSelect.innerHTML = '';
+    const sortedPrintTypes = Object.keys(printJobTypes).sort();
+    sortedPrintTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        editJobPrintTypeSelect.appendChild(option);
+    });
+    editJobPrintTypeSelect.value = job.printType;
+    editJobPrintTypeSelect.onchange = () => {
+        toggleEditJobFields(editJobPrintTypeSelect.value);
+    };
+
+    const editStandardPrintFields = document.getElementById('editStandardPrintFields');
+    const editPhotoBundleFields = document.getElementById('editPhotoBundleFields');
+
+    if (job.type === 'print') {
+        editStandardPrintFields.style.display = 'block';
+        editPhotoBundleFields.style.display = 'none';
+
+        document.getElementById('editJobBW').value = job.bwPages;
+        document.getElementById('editJobColored').value = job.coloredPages;
+        document.getElementById('editJobRejectedBW').value = job.rejectedBW;
+        document.getElementById('editJobRejectedColor').value = job.rejectedColor;
+    } else if (job.type === 'photo_bundle') {
+        editStandardPrintFields.style.display = 'none';
+        editPhotoBundleFields.style.display = 'block';
+
+        const editJobBundleNameSelect = document.getElementById('editJobBundleName');
+        editJobBundleNameSelect.innerHTML = '';
+        const sortedBundleNames = Object.keys(photoBundles).sort();
+        sortedBundleNames.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            editJobBundleNameSelect.appendChild(option);
+        });
+        editJobBundleNameSelect.value = job.bundleName;
+        document.getElementById('editJobBundleQuantity').value = job.bundleQuantity;
+    }
+
+    document.getElementById('editJobModalOverlay').classList.add('show');
+}
+
+function toggleEditJobFields(selectedPrintTypeName) {
+    const selectedPrintType = printJobTypes[selectedPrintTypeName];
+    const editStandardPrintFields = document.getElementById('editStandardPrintFields');
+    const editPhotoBundleFields = document.getElementById('editPhotoBundleFields');
+
+    if (selectedPrintType && selectedPrintType.type === 'photo_bundle') {
+        editStandardPrintFields.style.display = 'none';
+        editPhotoBundleFields.style.display = 'block';
+        populateBundleTypeDropdownForEditJob();
+    } else {
+        editStandardPrintFields.style.display = 'block';
+        editPhotoBundleFields.style.display = 'none';
+    }
+}
+
+function populateBundleTypeDropdownForEditJob() {
+    const editJobBundleNameSelect = document.getElementById('editJobBundleName');
+    editJobBundleNameSelect.innerHTML = '';
+    const sortedBundleNames = Object.keys(photoBundles).sort();
+    sortedBundleNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        editJobBundleNameSelect.appendChild(option);
+    });
+}
+
+
+function hideEditJobModal() {
+    document.getElementById('editJobModalOverlay').classList.remove('show');
+    currentEditingJobIndex = -1;
+}
+
+function saveEditedJob() {
+    if (currentEditingJobIndex === -1) return;
+
+    const oldJob = history[currentEditingJobIndex];
+
+    const newDate = document.getElementById('editJobDate').value;
+    const newPaperType = document.getElementById('editJobPaperType').value;
+    const newPrintTypeName = document.getElementById('editJobPrintType').value;
+
+    // Revert old job's paper consumption to inventory
+    if (inventory[oldJob.paperType] !== undefined) {
+        inventory[oldJob.paperType] += oldJob.paperConsumed;
+    } else {
+        inventory[oldJob.paperType] = oldJob.paperConsumed;
+    }
+
+    let updatedJob = { ...oldJob };
+    updatedJob.date = newDate;
+    updatedJob.paperType = newPaperType;
+    updatedJob.printType = newPrintTypeName;
+
+    const selectedPrintTypeDefinition = printJobTypes[newPrintTypeName];
+
+    if (selectedPrintTypeDefinition.type === 'standard') {
+        const newBWPages = parseInt(document.getElementById('editJobBW').value) || 0;
+        const newColoredPages = parseInt(document.getElementById('editJobColored').value) || 0;
+        const newRejectedBW = parseInt(document.getElementById('editJobRejectedBW').value) || 0;
+        const newRejectedColor = parseInt(document.getElementById('editJobRejectedColor').value) || 0;
+
+        const multiplier = selectedPrintTypeDefinition.multiplier;
+        const basePrice = selectedPrintTypeDefinition.basePrice;
+        const bundleQuantity = selectedPrintTypeDefinition.bundleQuantity;
+
+        const newPaperConsumed = newBWPages + newColoredPages + newRejectedBW + newRejectedColor;
+
+        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newPaperConsumed) {
+            alert(`Not enough ${newPaperType} paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+        inventory[newPaperType] -= newPaperConsumed;
+
+        let effectivePriceBW = priceBW * multiplier;
+        let effectivePriceColor = priceColor * multiplier;
+        
+        let newTotalCost = basePrice;
+        let totalSuccessfulPages = newBWPages + newColoredPages;
+        let sheetsBeyondBundle = totalSuccessfulPages - bundleQuantity;
+
+        if (sheetsBeyondBundle > 0) {
+            if (totalSuccessfulPages > 0) {
+                const bwRatio = newBWPages / totalSuccessfulPages;
+                const coloredRatio = newColoredPages / totalSuccessfulPages;
+                newTotalCost += (sheetsBeyondBundle * bwRatio * effectivePriceBW) + (sheetsBeyondBundle * coloredRatio * effectivePriceColor);
+            }
+        } else {
+            if (basePrice === 0 && bundleQuantity === 0) {
+                newTotalCost += (newBWPages * effectivePriceBW) + (newColoredPages * effectivePriceColor);
+            }
+        }
+
+        const newLossBW = newRejectedBW * priceBW;
+        const newLossColor = newRejectedColor * priceColor;
+        const newTotalLoss = newLossBW + newLossColor; 
+        const newNetProfit = newTotalCost - newTotalLoss;
+
+        Object.assign(updatedJob, {
+            type: 'print',
+            bwPages: newBWPages,
+            coloredPages: newColoredPages,
+            rejectedBW: newRejectedBW,
+            rejectedColor: newRejectedColor,
+            paperConsumed: newPaperConsumed,
+            totalCost: newTotalCost,
+            totalLoss: newTotalLoss,
+            netProfit: newNetProfit,
+            jobTypeMultiplier: multiplier,
+            jobTypeBasePrice: basePrice,
+            jobTypeBundleQuantity: bundleQuantity
+        });
+
+    } else if (selectedPrintTypeDefinition.type === 'photo_bundle') {
+        const newBundleName = document.getElementById('editJobBundleName').value;
+        const newBundleQuantity = parseInt(document.getElementById('editJobBundleQuantity').value) || 0;
+
+        if (!newBundleName || !photoBundles.hasOwnProperty(newBundleName)) {
+            alert('Please select a valid Photo ID Bundle for the edited job.');
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+        if (newBundleQuantity <= 0) {
+            alert('Bundle quantity must be at least 1.');
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+        if (photoYieldSettings.bundlesPerSheet <= 0) {
+            alert('Please set "Bundles per Sheet" in "Manage Photo ID Bundles" modal to calculate paper consumption.');
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+        const photoPaperType = photoYieldSettings.paperType;
+        if (inventory[photoPaperType] === undefined) {
+            alert(`"${photoPaperType}" is not in your inventory. Please add it via "Edit Inventory" or select a different paper type for photo bundles.`);
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+
+        const selectedBundle = photoBundles[newBundleName];
+        const pricePerBundle = selectedBundle.price;
+
+        const newPaperConsumed = Math.ceil(newBundleQuantity / photoYieldSettings.bundlesPerSheet);
+        
+        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newPaperConsumed) {
+            alert(`Not enough "${newPaperType}" paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
+            inventory[oldJob.paperType] -= oldJob.paperConsumed;
+            return;
+        }
+        inventory[newPaperType] -= newPaperConsumed;
+
+        const newTotalCost = pricePerBundle * newBundleQuantity;
+        const newTotalLoss = 0;
+        const newNetProfit = newTotalCost;
+
+        Object.assign(updatedJob, {
+            type: 'photo_bundle',
+            bundleName: newBundleName,
+            bundleQuantity: newBundleQuantity,
+            bundlePricePerUnit: pricePerBundle,
+            bundleComposition: selectedBundle.composition,
+            paperConsumed: newPaperConsumed,
+            totalCost: newTotalCost,
+            totalLoss: newTotalLoss,
+            netProfit: newNetProfit,
+            jobYieldBundlesPerSheet: photoYieldSettings.bundlesPerSheet
+        });
+    } else {
+        alert('Invalid print type selected for job edit.');
+        inventory[oldJob.paperType] -= oldJob.paperConsumed;
+        return;
+    }
+
+    history[currentEditingJobIndex] = updatedJob;
+
+    saveData();
+    calculateInitialEstimatedProfit();
+    updateDisplay();
+    renderChart();
+    displayHistory();
+    hideEditJobModal();
+    alert('Job updated successfully!');
+}
+
+function deleteJob(index) {
+    if (confirm(`Are you sure you want to delete this print job (${history[index].date} - ${history[index].paperType})? This cannot be undone.`)) {
+        const jobToDelete = history[index];
+        
+        if (inventory[jobToDelete.paperType] !== undefined) {
+            inventory[jobToDelete.paperType] += jobToDelete.paperConsumed;
+        } else {
+            inventory[jobToDelete.paperType] = jobToDelete.paperConsumed;
+        }
+
+        history.splice(index, 1);
+
+        saveData();
+        calculateInitialEstimatedProfit();
+        updateDisplay();
+        renderChart();
+        displayHistory();
+        alert('Job deleted successfully!');
+    }
+}
+
 
 // --- Update Totals Function ---
 function updateTotals(dataForPeriod = history) {
@@ -595,8 +1252,10 @@ function updateTotals(dataForPeriod = history) {
     });
 
     history.forEach(job => {
-        totalBWSuccessfulSheetsPrintedOverall += job.bwPages;
-        totalColoredSuccessfulSheetsPrintedOverall += job.coloredPages;
+        if (job.type === 'print') {
+            totalBWSuccessfulSheetsPrintedOverall += job.bwPages;
+            totalColoredSuccessfulSheetsPrintedOverall += job.coloredPages;
+        }
     });
 
     const currentPriceBW = priceBW; 
@@ -666,7 +1325,9 @@ function exportToFile() {
         history,
         initialEstimatedProfitBW,
         initialEstimatedProfitColor,
-        printJobTypes
+        printJobTypes,
+        photoBundles,
+        photoYieldSettings
     }, null, 2);
 
     const blob = new Blob([data], { type: 'application/json' });
