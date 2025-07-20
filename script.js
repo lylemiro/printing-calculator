@@ -19,12 +19,13 @@ let currentEditingJobIndex = -1;
 // --- Setup Modal Functions ---
 function showSetupModal() {
   document.getElementById('setupModalOverlay').classList.add('show');
-  document.getElementById('setupA4Count').value = inventory['A4'] !== undefined ? inventory['A4'].count : 500;
-  document.getElementById('setupLetterCount').value = inventory['Letter'] !== undefined ? inventory['Letter'].count : 500;
-  document.getElementById('setupLegalCount').value = inventory['Legal'] !== undefined ? inventory['Legal'].count : 500;
+  // Populate inputs with current values, or safe defaults if not yet loaded/initialized
+  document.getElementById('setupA4Count').value = inventory['A4'] && inventory['A4'].count !== undefined ? inventory['A4'].count : 500;
+  document.getElementById('setupLetterCount').value = inventory['Letter'] && inventory['Letter'].count !== undefined ? inventory['Letter'].count : 500;
+  document.getElementById('setupLegalCount').value = inventory['Legal'] && inventory['Legal'].count !== undefined ? inventory['Legal'].count : 500;
   
-  document.getElementById('setupPriceBW').value = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 1;
-  document.getElementById('setupPriceColor').value = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 5;
+  document.getElementById('setupPriceBW').value = pricing["Standard B&W Price"] && pricing["Standard B&W Price"].value !== undefined ? pricing["Standard B&W Price"].value : 1;
+  document.getElementById('setupPriceColor').value = pricing["Standard Color Price"] && pricing["Standard Color Price"].value !== undefined ? pricing["Standard Color Price"].value : 5;
 }
 
 function hideSetupModal() {
@@ -32,15 +33,40 @@ function hideSetupModal() {
 }
 
 function saveInitialSetup() {
-  inventory = {};
-  inventory['A4'] = { count: Math.max(0, parseInt(document.getElementById('setupA4Count').value) || 0), category: 'standard' };
-  inventory['Letter'] = { count: Math.max(0, parseInt(document.getElementById('setupLetterCount').value) || 0), category: 'standard' };
-  inventory['Legal'] = { count: Math.max(0, parseInt(document.getElementById('setupLegalCount').value) || 0), category: 'standard' };
-  
-  if (!inventory.hasOwnProperty('A4 Sticker Photo Paper')) {
-      inventory['A4 Sticker Photo Paper'] = { count: 100, category: 'photo' };
+  // Ensure inventory is initialized with default structure if not already
+  if (Object.keys(inventory).length === 0) { // Check if inventory is empty
+      inventory = {
+          "A4": { count: 0, category: 'standard' },
+          "Letter": { count: 0, category: 'standard' },
+          "Legal": { count: 0, category: 'standard' },
+          "A4 Sticker Photo Paper": { count: 0, category: 'photo' } // Ensure photo paper is there
+      };
+  } else {
+      // Ensure default paper types exist if they were deleted
+      if (!inventory.hasOwnProperty('A4')) inventory['A4'] = { count: 0, category: 'standard' };
+      if (!inventory.hasOwnProperty('Letter')) inventory['Letter'] = { count: 0, category: 'standard' };
+      if (!inventory.hasOwnProperty('Legal')) inventory['Legal'] = { count: 0, category: 'standard' };
+      if (!inventory.hasOwnProperty('A4 Sticker Photo Paper')) inventory['A4 Sticker Photo Paper'] = { count: 0, category: 'photo' };
   }
 
+  // Ensure pricing object is initialized with default core values if not already
+  if (Object.keys(pricing).length === 0 || !pricing["Standard B&W Price"]) {
+      pricing = {
+          "Standard B&W Price": { value: 1, category: "standard" },
+          "Standard Color Price": { value: 5, category: "standard" },
+          "Full Page Photo Price": { value: 150, category: "photo" }
+      };
+  }
+  // Ensure photoYieldSettings is initialized if not already
+  if (!photoYieldSettings.paperType) {
+      photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40, estimatedValuePerPhotoSheet: 150 };
+  }
+
+
+  inventory['A4'].count = Math.max(0, parseInt(document.getElementById('setupA4Count').value) || 0);
+  inventory['Letter'].count = Math.max(0, parseInt(document.getElementById('setupLetterCount').value) || 0);
+  inventory['Legal'].count = Math.max(0, parseInt(document.getElementById('setupLegalCount').value) || 0);
+  
   pricing["Standard B&W Price"].value = Math.max(0, parseFloat(document.getElementById('setupPriceBW').value) || 0);
   pricing["Standard Color Price"].value = Math.max(0, parseFloat(document.getElementById('setupPriceColor').value) || 0);
 
@@ -255,7 +281,7 @@ function showManagePhotoBundlesModal() {
     
     const photoBundlePaperTypeSelect = document.getElementById('photoBundlePaperType');
     photoBundlePaperTypeSelect.innerHTML = '';
-    const sortedPaperTypes = Object.keys(inventory).filter(type => inventory[type].category === 'photo').sort(); // Only show photo paper types
+    const sortedPaperTypes = Object.keys(inventory).filter(type => inventory[type].category === 'photo').sort();
     sortedPaperTypes.forEach(type => {
         const option = document.createElement('option');
         option.value = type;
@@ -558,7 +584,6 @@ function saveAllPricingChanges() {
     if (hasError) return;
 
     pricing = updatedPricing;
-    // Update global priceBW and priceColor from the new pricing object
     priceBW = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 0;
     priceColor = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 0;
 
@@ -951,7 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.target === event.currentTarget) hideManagePricingModal();
     });
     document.getElementById('importFileInput').addEventListener('change', handleImportFileSelect);
-    document.getElementById('importDataButton').addEventListener('click', triggerImportData); // Corrected ID and function call
+    document.getElementById('importDataButton').addEventListener('click', triggerImportData);
 });
 
 // --- Main Display Update ---
@@ -1825,6 +1850,91 @@ function exportToFile() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+function triggerImportData() {
+    document.getElementById('importFileInput').click();
+}
+
+function handleImportFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) {
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const importedData = JSON.parse(e.target.result);
+
+            if (importedData.inventory && importedData.pricing && importedData.history &&
+                importedData.photoYieldSettings && importedData.photoBundles &&
+                importedData.baselineEstimatedStandardBWProfit !== undefined &&
+                importedData.baselineEstimatedStandardColorProfit !== undefined &&
+                importedData.baselineEstimatedPhotoProfit !== undefined &&
+                importedData.printJobTypes && importedData.photoPaperCumulativeFractionUsed !== undefined) {
+                
+                inventory = importedData.inventory;
+                pricing = importedData.pricing;
+                history = importedData.history;
+                baselineEstimatedStandardBWProfit = importedData.baselineEstimatedStandardBWProfit;
+                baselineEstimatedStandardColorProfit = importedData.baselineEstimatedStandardColorProfit;
+                baselineEstimatedPhotoProfit = importedData.baselineEstimatedPhotoProfit;
+                printJobTypes = importedData.printJobTypes;
+                photoBundles = importedData.photoBundles;
+                photoYieldSettings = importedData.photoYieldSettings;
+                photoPaperCumulativeFractionUsed = importedData.photoPaperCumulativeFractionUsed;
+
+                for (const key in inventory) {
+                    if (inventory[key].category === undefined) {
+                        inventory[key].category = (key.includes('Photo') || key.includes('Glossy')) ? 'photo' : 'standard';
+                        if (key === 'A4' || key === 'Letter' || key === 'Legal') {
+                            inventory[key].category = 'standard';
+                        }
+                    }
+                    if (inventory[key].count === undefined) {
+                        inventory[key] = { count: inventory[key], category: inventory[key].category };
+                    }
+                }
+                for (const key in pricing) {
+                    if (pricing[key].category === undefined) {
+                        pricing[key].category = (key.includes('Photo')) ? 'photo' : 'standard';
+                    }
+                }
+                history.forEach(job => {
+                    if (!job.paperCategory && inventory[job.paperType]) {
+                        job.paperCategory = inventory[job.paperType].category;
+                    } else if (!job.paperCategory) {
+                        job.paperCategory = 'standard';
+                    }
+                    if (job.type === 'photo_bundle' && job.jobFractionalSheetsConsumed === undefined) {
+                        const bundle = photoBundles[job.bundleName];
+                        if (bundle && job.bundleQuantity) {
+                            const consumptionResult = calculateBundleSheetConsumption(bundle.composition, job.bundleQuantity);
+                            job.jobFractionalSheetsConsumed = consumptionResult.fractionalSheets;
+                        } else {
+                            job.jobFractionalSheetsConsumed = job.paperConsumed || 0;
+                        }
+                    }
+                });
+                
+                localStorage.setItem('isSetupComplete', 'true');
+                saveData();
+                updateDisplay();
+                renderChart();
+                displayHistory();
+                alert('Data imported successfully!');
+
+            } else {
+                alert('Error: Invalid JSON file structure. Please import a file previously exported from this calculator.');
+                console.error('Invalid imported data:', importedData);
+            }
+        } catch (error) {
+            alert('Error parsing JSON file: ' + error.message);
+            console.error('Error parsing JSON file:', error);
+        }
+    };
+    reader.readAsText(file);
 }
 
 function renderChart(dataToChart = history) {

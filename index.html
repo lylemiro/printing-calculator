@@ -94,7 +94,7 @@
         <button onclick="exportToFile()">Save to File</button>
         <button onclick="printSummaryReport()">Print Report</button>
         <button id="importDataButton" onclick="triggerImportData()">Import Data</button> <!-- ADDED ID -->
-        <input type="file" id="importFileInput" accept=".json" style="display: none;">
+        <input type="file" id="importFileInput" accept=".json" style="display: none;"> <!-- HIDDEN FILE INPUT -->
       </div>
 
       <p id="filterDisplay">Showing all data.</p>
@@ -232,6 +232,8 @@
         <label>Max 2x2s per A4: <input type="number" id="max2x2PerA4" value="0" onchange="updatePhotoYieldSettings()"></label>
         <label>Max 1x1s per A4: <input type="number" id="max1x1PerA4" value="0" onchange="updatePhotoYieldSettings()"></label>
         <p class="yield-explanation">
+          * "Estimated Value per Photo Paper Sheet" is used for Inventory Profit/Value metrics and for "Full Page Photo Print" job type.
+          <br>
           * "Max 2x2s/1x1s per A4" are used to calculate sheet consumption for Photo ID Bundles.
         </p>
       </div>
