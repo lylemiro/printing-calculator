@@ -1,28 +1,30 @@
 let inventory = {};
-let priceBW = 1;
-let priceColor = 5;
+let pricing = {};
 let history = [];
 let usageChart;
-let initialEstimatedProfitBW = 0;
-let initialEstimatedProfitColor = 0;
+
+let baselineEstimatedStandardBWProfit = 0;
+let baselineEstimatedStandardColorProfit = 0;
+let baselineEstimatedPhotoProfit = 0;
 
 let isEditingInventory = false;
 
 let printJobTypes = {};
 let photoBundles = {};
-let photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 0, max1x1PerA4: 0 };
-let photoPaperCumulativeFractionUsed = 0; // NEW: Tracks fractional usage for photo paper
+let photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 0, max1x1PerA4: 0, estimatedValuePerPhotoSheet: 0 };
+let photoPaperCumulativeFractionUsed = 0;
 
 let currentEditingJobIndex = -1;
 
 // --- Setup Modal Functions ---
 function showSetupModal() {
   document.getElementById('setupModalOverlay').classList.add('show');
-  document.getElementById('setupA4Count').value = inventory['A4'] !== undefined ? inventory['A4'] : 500;
-  document.getElementById('setupLetterCount').value = inventory['Letter'] !== undefined ? inventory['Letter'] : 500;
-  document.getElementById('setupLegalCount').value = inventory['Legal'] !== undefined ? inventory['Legal'] : 500;
-  document.getElementById('setupPriceBW').value = priceBW;
-  document.getElementById('setupPriceColor').value = priceColor;
+  document.getElementById('setupA4Count').value = inventory['A4'] !== undefined ? inventory['A4'].count : 500;
+  document.getElementById('setupLetterCount').value = inventory['Letter'] !== undefined ? inventory['Letter'].count : 500;
+  document.getElementById('setupLegalCount').value = inventory['Legal'] !== undefined ? inventory['Legal'].count : 500;
+  
+  document.getElementById('setupPriceBW').value = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 1;
+  document.getElementById('setupPriceColor').value = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 5;
 }
 
 function hideSetupModal() {
@@ -31,14 +33,19 @@ function hideSetupModal() {
 
 function saveInitialSetup() {
   inventory = {};
-  inventory['A4'] = Math.max(0, parseInt(document.getElementById('setupA4Count').value) || 0);
-  inventory['Letter'] = Math.max(0, parseInt(document.getElementById('setupLetterCount').value) || 0);
-  inventory['Legal'] = Math.max(0, parseInt(document.getElementById('setupLegalCount').value) || 0);
-  priceBW = Math.max(0, parseFloat(document.getElementById('setupPriceBW').value) || 0);
-  priceColor = Math.max(0, parseFloat(document.getElementById('setupPriceColor').value) || 0);
+  inventory['A4'] = { count: Math.max(0, parseInt(document.getElementById('setupA4Count').value) || 0), category: 'standard' };
+  inventory['Letter'] = { count: Math.max(0, parseInt(document.getElementById('setupLetterCount').value) || 0), category: 'standard' };
+  inventory['Legal'] = { count: Math.max(0, parseInt(document.getElementById('setupLegalCount').value) || 0), category: 'standard' };
+  
+  if (!inventory.hasOwnProperty('A4 Sticker Photo Paper')) {
+      inventory['A4 Sticker Photo Paper'] = { count: 100, category: 'photo' };
+  }
+
+  pricing["Standard B&W Price"].value = Math.max(0, parseFloat(document.getElementById('setupPriceBW').value) || 0);
+  pricing["Standard Color Price"].value = Math.max(0, parseFloat(document.getElementById('setupPriceColor').value) || 0);
 
   localStorage.setItem('isSetupComplete', 'true');
-  calculateInitialEstimatedProfit();
+  setInitialBaselines();
   saveData();
   updateDisplay();
   renderChart();
@@ -51,6 +58,7 @@ function showAddPaperModal() {
   document.getElementById('addPaperModalOverlay').classList.add('show');
   document.getElementById('newPaperTypeName').value = '';
   document.getElementById('newPaperTypeCount').value = 0;
+  document.getElementById('newPaperTypeCategory').value = 'standard';
 }
 
 function hideAddPaperModal() {
@@ -60,6 +68,7 @@ function hideAddPaperModal() {
 function addNewPaperType() {
   const newTypeName = document.getElementById('newPaperTypeName').value.trim();
   const newTypeCount = Math.max(0, parseInt(document.getElementById('newPaperTypeCount').value) || 0);
+  const newTypeCategory = document.getElementById('newPaperTypeCategory').value;
 
   if (!newTypeName) {
     alert('Please enter a name for the new paper type.');
@@ -70,8 +79,8 @@ function addNewPaperType() {
     return;
   }
 
-  inventory[newTypeName] = newTypeCount;
-  calculateInitialEstimatedProfit();
+  inventory[newTypeName] = { count: newTypeCount, category: newTypeCategory };
+  setInitialBaselines();
   saveData();
   updateDisplay();
   hideAddPaperModal();
@@ -88,7 +97,7 @@ function deletePaperType(paperType) {
     }
 
     delete inventory[paperType];
-    calculateInitialEstimatedProfit();
+    setInitialBaselines();
     saveData();
     updateDisplay();
   }
@@ -116,6 +125,7 @@ function renderPrintTypeManagementList() {
             <label>Type: <select class="print-type-category-input">
                 <option value="standard" ${printJobTypes[type].type === 'standard' ? 'selected' : ''}>Standard Print</option>
                 <option value="photo_bundle" ${printJobTypes[type].type === 'photo_bundle' ? 'selected' : ''}>Photo Bundle</option>
+                <option value="full_page_photo" ${printJobTypes[type].type === 'full_page_photo' ? 'selected' : ''}>Full Page Photo</option>
             </select></label>
             <label>Multiplier: <input type="number" step="0.01" class="print-type-multiplier-input" value="${printJobTypes[type].multiplier}"></label>
             <label>Base Price: ₱<input type="number" step="0.01" class="print-type-base-price-input" value="${printJobTypes[type].basePrice}"></label>
@@ -245,7 +255,7 @@ function showManagePhotoBundlesModal() {
     
     const photoBundlePaperTypeSelect = document.getElementById('photoBundlePaperType');
     photoBundlePaperTypeSelect.innerHTML = '';
-    const sortedPaperTypes = Object.keys(inventory).sort();
+    const sortedPaperTypes = Object.keys(inventory).filter(type => inventory[type].category === 'photo').sort(); // Only show photo paper types
     sortedPaperTypes.forEach(type => {
         const option = document.createElement('option');
         option.value = type;
@@ -254,6 +264,7 @@ function showManagePhotoBundlesModal() {
     });
     photoBundlePaperTypeSelect.value = photoYieldSettings.paperType;
     
+    document.getElementById('estimatedValuePerPhotoSheet').value = photoYieldSettings.estimatedValuePerPhotoSheet;
     document.getElementById('max2x2PerA4').value = photoYieldSettings.max2x2PerA4;
     document.getElementById('max1x1PerA4').value = photoYieldSettings.max1x1PerA4;
 
@@ -266,10 +277,12 @@ function hideManagePhotoBundlesModal() {
 
 function updatePhotoYieldSettings() {
     photoYieldSettings.paperType = document.getElementById('photoBundlePaperType').value;
+    photoYieldSettings.estimatedValuePerPhotoSheet = Math.max(0, parseFloat(document.getElementById('estimatedValuePerPhotoSheet').value) || 0);
     photoYieldSettings.max2x2PerA4 = Math.max(0, parseInt(document.getElementById('max2x2PerA4').value) || 0);
     photoYieldSettings.max1x1PerA4 = Math.max(0, parseInt(document.getElementById('max1x1PerA4').value) || 0);
     saveData();
     renderPhotoBundleManagementList();
+    updateDisplay();
     alert('Photo yield settings updated.');
 }
 
@@ -296,7 +309,7 @@ function calculateBundleSheetConsumption(bundleComposition, numberOfBundles) {
     }
 
     const totalSheetFraction = fractionOfSheetFor2x2s + fractionOfSheetFor1x1s;
-    const sheetsConsumed = Math.ceil(totalSheetFraction); // Whole sheets for immediate deduction/check
+    const sheetsConsumed = Math.ceil(totalSheetFraction);
 
     return { sheets: sheetsConsumed, error: null, fractionalSheets: totalSheetFraction };
 }
@@ -436,15 +449,135 @@ function saveAllPhotoBundleChanges() {
     alert('Photo bundles updated successfully!');
 }
 
+// --- Manage Pricing Modal Functions ---
+function showManagePricingModal() {
+    document.getElementById('managePricingModalOverlay').classList.add('show');
+    renderPricingManagementList();
+}
+
+function hideManagePricingModal() {
+    document.getElementById('managePricingModalOverlay').classList.remove('show');
+}
+
+function renderPricingManagementList() {
+    const listElement = document.getElementById('pricingManagementList');
+    listElement.innerHTML = '';
+
+    for (const priceName in pricing) {
+        const li = document.createElement('li');
+        li.dataset.originalName = priceName;
+        li.innerHTML = `
+            <input type="text" class="price-name-input" value="${priceName}">
+            <label>Value: ₱<input type="number" step="0.01" class="price-value-input" value="${pricing[priceName].value}"></label>
+            <label>Category: <select class="price-category-input">
+                <option value="standard" ${pricing[priceName].category === 'standard' ? 'selected' : ''}>Standard Print</option>
+                <option value="photo" ${pricing[priceName].category === 'photo' ? 'selected' : ''}>Photo Print</option>
+                <option value="other" ${pricing[priceName].category === 'other' ? 'selected' : ''}>Other</option>
+            </select></label>
+            <div class="item-actions">
+                <button class="delete-btn" onclick="deletePriceEntryFromModal('${priceName}')">Delete</button>
+            </div>
+        `;
+        listElement.appendChild(li);
+    }
+}
+
+function addNewPriceEntry() {
+    const newPriceName = document.getElementById('newPriceName').value.trim();
+    const newPriceValue = Math.max(0, parseFloat(document.getElementById('newPriceValue').value) || 0);
+    const newPriceCategory = document.getElementById('newPriceCategory').value;
+
+    if (!newPriceName) {
+        alert('Please enter a name for the new price entry.');
+        return;
+    }
+    if (pricing.hasOwnProperty(newPriceName)) {
+        alert(`Price entry "${newPriceName}" already exists.`);
+        return;
+    }
+
+    pricing[newPriceName] = { value: newPriceValue, category: newPriceCategory };
+    saveData();
+    renderPricingManagementList();
+    updateDisplay();
+    document.getElementById('newPriceName').value = '';
+    document.getElementById('newPriceValue').value = 0.0;
+    document.getElementById('newPriceCategory').value = 'standard';
+    alert(`Price entry "${newPriceName}" added.`);
+}
+
+function deletePriceEntryFromModal(priceName) {
+    if (priceName === "Standard B&W Price" || priceName === "Standard Color Price" || priceName === "Full Page Photo Price") {
+        alert(`"${priceName}" is a core price entry and cannot be deleted.`);
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete price entry "${priceName}"? This cannot be undone.`)) {
+        delete pricing[priceName];
+        saveData();
+        renderPricingManagementList();
+        updateDisplay();
+        alert(`Price entry "${priceName}" deleted.`);
+    }
+}
+
+function saveAllPricingChanges() {
+    const listItems = document.querySelectorAll('#pricingManagementList li');
+    const updatedPricing = {};
+    let hasError = false;
+
+    listItems.forEach(li => {
+        const oldName = li.dataset.originalName;
+        const newNameInput = li.querySelector('.price-name-input');
+        const newValueInput = li.querySelector('.price-value-input');
+        const newCategoryInput = li.querySelector('.price-category-input');
+
+        const newName = newNameInput.value.trim();
+        const newValue = Math.max(0, parseFloat(newValueInput.value) || 0);
+        const newCategory = newCategoryInput.value;
+
+        if (!newName) {
+            alert('Price name cannot be empty.');
+            hasError = true;
+            return;
+        }
+        if (updatedPricing.hasOwnProperty(newName) && newName !== oldName) {
+            alert(`Error: Duplicate price name "${newName}". All price entries must have unique names.`);
+            hasError = true;
+            return;
+        }
+        if (newName !== oldName && pricing.hasOwnProperty(newName) && !Array.from(listItems).some(el => el.dataset.originalName === newName)) {
+            alert(`Error: Price name "${newName}" already exists. Please choose a different name.`);
+            hasError = true;
+            return;
+        }
+
+        updatedPricing[newName] = { value: newValue, category: newCategory };
+    });
+
+    if (hasError) return;
+
+    pricing = updatedPricing;
+    // Update global priceBW and priceColor from the new pricing object
+    priceBW = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 0;
+    priceColor = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 0;
+
+    saveData();
+    setInitialBaselines();
+    updateDisplay();
+    renderPricingManagementList();
+    alert('Pricing updated successfully!');
+}
+
 
 // --- Data Loading & Saving ---
 function loadData() {
     const storedInventory = localStorage.getItem('inventory');
-    const storedPriceBW = localStorage.getItem('priceBW');
-    const storedPriceColor = localStorage.getItem('priceColor');
+    const storedPricing = localStorage.getItem('pricing');
     const storedHistory = localStorage.getItem('history');
-    const storedInitialEstProfitBW = localStorage.getItem('initialEstimatedProfitBW');
-    const storedInitialEstProfitColor = localStorage.getItem('initialEstimatedProfitColor');
+    const storedBaselineEstimatedStandardBWProfit = localStorage.getItem('baselineEstimatedStandardBWProfit');
+    const storedBaselineEstimatedStandardColorProfit = localStorage.getItem('baselineEstimatedStandardColorProfit');
+    const storedBaselineEstimatedPhotoProfit = localStorage.getItem('baselineEstimatedPhotoProfit');
     const storedPrintJobTypes = localStorage.getItem('printJobTypes');
     const storedPhotoBundles = localStorage.getItem('photoBundles');
     const storedPhotoYieldSettings = localStorage.getItem('photoYieldSettings');
@@ -452,23 +585,70 @@ function loadData() {
 
     if (storedInventory) {
         inventory = JSON.parse(storedInventory);
+        for (const key in inventory) {
+            if (inventory[key].category === undefined) {
+                inventory[key].category = (key.includes('Photo') || key.includes('Glossy')) ? 'photo' : 'standard';
+                if (key === 'A4' || key === 'Letter' || key === 'Legal') {
+                    inventory[key].category = 'standard';
+                }
+            }
+            if (inventory[key].count === undefined) {
+                inventory[key] = { count: inventory[key], category: inventory[key].category };
+            }
+        }
     } else {
-        inventory = { "A4": 500, "Letter": 500, "Legal": 500 };
+        inventory = {
+            "A4": { count: 500, category: 'standard' },
+            "Letter": { count: 500, category: 'standard' },
+            "Legal": { count: 500, category: 'standard' },
+            "A4 Sticker Photo Paper": { count: 100, category: 'photo' }
+        };
     }
 
-    if (storedPriceBW) priceBW = parseFloat(storedPriceBW);
-    if (storedPriceColor) priceColor = parseFloat(storedPriceColor);
+    if (storedPricing) {
+        pricing = JSON.parse(storedPricing);
+        if (!pricing["Standard B&W Price"]) pricing["Standard B&W Price"] = { value: 1, category: "standard" };
+        if (!pricing["Standard Color Price"]) pricing["Standard Color Price"] = { value: 5, category: "standard" };
+        if (!pricing["Full Page Photo Price"]) pricing["Full Page Photo Price"] = { value: 150, category: "photo" };
+    } else {
+        pricing = {
+            "Standard B&W Price": { value: 1, category: "standard" },
+            "Standard Color Price": { value: 5, category: "standard" },
+            "Full Page Photo Price": { value: 150, category: "photo" }
+        };
+    }
+    priceBW = pricing["Standard B&W Price"].value;
+    priceColor = pricing["Standard Color Price"].value;
+
+
     if (storedHistory) history = JSON.parse(storedHistory);
-    if (storedInitialEstProfitBW !== null) initialEstimatedProfitBW = parseFloat(storedInitialEstProfitBW);
-    if (storedInitialEstProfitColor !== null) initialEstimatedProfitColor = parseFloat(storedInitialEstProfitColor);
+    history.forEach(job => {
+        if (!job.paperCategory && inventory[job.paperType]) {
+            job.paperCategory = inventory[job.paperType].category;
+        } else if (!job.paperCategory) {
+            job.paperCategory = 'standard';
+        }
+    });
+
+
+    if (storedBaselineEstimatedStandardBWProfit !== null) baselineEstimatedStandardBWProfit = parseFloat(storedBaselineEstimatedStandardBWProfit);
+    if (storedBaselineEstimatedStandardColorProfit !== null) baselineEstimatedStandardColorProfit = parseFloat(storedBaselineEstimatedStandardColorProfit);
+    if (storedBaselineEstimatedPhotoProfit !== null) baselineEstimatedPhotoProfit = parseFloat(storedBaselineEstimatedPhotoProfit);
     
     if (storedPrintJobTypes) {
         printJobTypes = JSON.parse(storedPrintJobTypes);
+        if (!printJobTypes["Single-sided"].type) printJobTypes["Single-sided"].type = 'standard';
+        if (!printJobTypes["Double-sided"].type) printJobTypes["Double-sided"].type = 'standard';
+        if (!printJobTypes["Photo Quality"].type) printJobTypes["Photo Quality"].type = 'photo_bundle';
+        if (!printJobTypes["Full Page Photo Print"]) {
+            printJobTypes["Full Page Photo Print"] = { type: 'full_page_photo', multiplier: 1, basePrice: 0, bundleQuantity: 0 };
+        }
     } else {
         printJobTypes = { 
             "Single-sided": { type: 'standard', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
             "Double-sided": { type: 'standard', multiplier: 2, basePrice: 0, bundleQuantity: 0 },
-            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
+            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
+            "Full Page Photo Print": { type: 'full_page_photo', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
         };
     }
 
@@ -486,7 +666,7 @@ function loadData() {
     if (storedPhotoYieldSettings) {
         photoYieldSettings = JSON.parse(storedPhotoYieldSettings);
     } else {
-        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40 };
+        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40, estimatedValuePerPhotoSheet: 150 };
     }
 
     if (storedPhotoPaperCumulativeFractionUsed !== null) {
@@ -496,26 +676,41 @@ function loadData() {
 
 function saveData() {
     localStorage.setItem('inventory', JSON.stringify(inventory));
-    localStorage.setItem('priceBW', priceBW);
-    localStorage.setItem('priceColor', priceColor);
+    localStorage.setItem('pricing', JSON.stringify(pricing));
     localStorage.setItem('history', JSON.stringify(history));
-    localStorage.setItem('initialEstimatedProfitBW', initialEstimatedProfitBW);
-    localStorage.setItem('initialEstimatedProfitColor', initialEstimatedProfitColor);
+    localStorage.setItem('baselineEstimatedStandardBWProfit', baselineEstimatedStandardBWProfit);
+    localStorage.setItem('baselineEstimatedStandardColorProfit', baselineEstimatedStandardColorProfit);
+    localStorage.setItem('baselineEstimatedPhotoProfit', baselineEstimatedPhotoProfit);
     localStorage.setItem('printJobTypes', JSON.stringify(printJobTypes));
     localStorage.setItem('photoBundles', JSON.stringify(photoBundles));
     localStorage.setItem('photoYieldSettings', JSON.stringify(photoYieldSettings));
     localStorage.setItem('photoPaperCumulativeFractionUsed', photoPaperCumulativeFractionUsed);
 }
 
-function calculateInitialEstimatedProfit() {
-    let totalCurrentInventorySheets = 0;
+// NEW: Function to set the fixed baseline estimated profits
+function setInitialBaselines() {
+    let totalStandardSheets = 0;
+    let totalPhotoSheets = 0;
+
     for (const type in inventory) {
-        totalCurrentInventorySheets += inventory[type];
+        if (inventory[type].category === 'standard') {
+            totalStandardSheets += inventory[type].count;
+        } else if (inventory[type].category === 'photo') {
+            totalPhotoSheets += inventory[type].count;
+        }
     }
-    initialEstimatedProfitBW = totalCurrentInventorySheets * priceBW;
-    initialEstimatedProfitColor = totalCurrentInventorySheets * priceColor;
+    
+    const currentPriceBW = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 0;
+    const currentPriceColor = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 0;
+    const currentEstimatedValuePerPhotoSheet = photoYieldSettings.estimatedValuePerPhotoSheet;
+
+    baselineEstimatedStandardBWProfit = totalStandardSheets * currentPriceBW;
+    baselineEstimatedStandardColorProfit = totalStandardSheets * currentPriceColor;
+    baselineEstimatedPhotoProfit = totalPhotoSheets * currentEstimatedValuePerPhotoSheet;
+
     saveData();
 }
+
 
 // --- Inventory Edit Mode Functions ---
 function toggleEditMode() {
@@ -534,9 +729,11 @@ function saveInventoryChanges() {
         const oldName = itemDiv.dataset.originalName;
         const newNameInput = itemDiv.querySelector('.item-name-input');
         const newCountInput = itemDiv.querySelector('.item-count-input');
+        const newCategoryInput = itemDiv.querySelector('.item-category-input');
 
         const newName = newNameInput.value.trim();
         const newCount = Math.max(0, parseInt(newCountInput.value) || 0);
+        const newCategory = newCategoryInput.value;
 
         if (!newName) {
             alert('Paper type name cannot be empty for all items.');
@@ -555,9 +752,13 @@ function saveInventoryChanges() {
              return;
         }
 
-        newInventory[newName] = newCount;
+        newInventory[newName] = { count: newCount, category: newCategory };
         if (newName !== oldName) {
-            renamedItems[oldName] = newName;
+            history.forEach(job => {
+                if (job.paperType === oldName) {
+                    job.paperType = newName;
+                }
+            });
         }
     });
 
@@ -565,25 +766,13 @@ function saveInventoryChanges() {
         return;
     }
 
-    for (const oldName in renamedItems) {
-        const newName = renamedItems[oldName];
-        history.forEach(job => {
-            if (job.paperType === oldName) {
-                job.paperType = newName;
-            }
-        });
-    }
-
     inventory = newInventory;
 
-    priceBW = Math.max(0, parseFloat(document.getElementById('priceBW').value) || 0);
-    priceColor = Math.max(0, parseFloat(document.getElementById('priceColor').value) || 0);
-
     isEditingInventory = false;
-    calculateInitialEstimatedProfit();
+    setInitialBaselines();
     saveData();
     updateDisplay();
-    alert('Inventory and prices updated successfully!');
+    alert('Inventory updated successfully!');
 }
 
 function cancelEditMode() {
@@ -605,15 +794,19 @@ function renderInventory() {
     if (isEditingInventory) {
         itemDiv.innerHTML = `
             <input type="text" class="item-name-input" value="${type}">
-            <input type="number" class="item-count-input" value="${inventory[type]}">
+            <label>Count: <input type="number" class="item-count-input" value="${inventory[type].count}"></label>
+            <label>Category: <select class="item-category-input">
+                <option value="standard" ${inventory[type].category === 'standard' ? 'selected' : ''}>Standard</option>
+                <option value="photo" ${inventory[type].category === 'photo' ? 'selected' : ''}>Photo</option>
+            </select></label>
             <div class="item-actions">
                 <button class="delete-btn" onclick="deletePaperType('${type}')">Delete</button>
             </div>
         `;
     } else {
         itemDiv.innerHTML = `
-            <span class="item-name-display">${type}:</span>
-            <input type="number" class="item-count-input" value="${inventory[type]}" disabled>
+            <span class="item-name-display">${type} (${inventory[type].category}):</span>
+            <input type="number" class="item-count-input" value="${inventory[type].count}" disabled>
         `;
     }
     dynamicInventoryItemsDiv.appendChild(itemDiv);
@@ -625,6 +818,7 @@ function renderInventory() {
   const cancelBtn = document.getElementById('cancelEditBtn');
   const priceBWInput = document.getElementById('priceBW');
   const priceColorInput = document.getElementById('priceColor');
+  const managePricingBtn = document.getElementById('managePricingBtn');
 
   if (isEditingInventory) {
       editBtn.textContent = 'Save Changes';
@@ -632,6 +826,7 @@ function renderInventory() {
       cancelBtn.style.display = 'inline-block';
       addBtn.style.display = 'inline-block';
       resetBtn.style.display = 'none';
+      managePricingBtn.style.display = 'none';
       priceBWInput.disabled = false;
       priceColorInput.disabled = false;
   } else {
@@ -640,10 +835,34 @@ function renderInventory() {
       cancelBtn.style.display = 'none';
       addBtn.style.display = 'inline-block';
       resetBtn.style.display = 'inline-block';
+      managePricingBtn.style.display = 'inline-block';
       priceBWInput.disabled = true;
       priceColorInput.disabled = true;
   }
 }
+
+// NEW: Function to calculate and display current inventory values
+function calculateCurrentInventoryValues() {
+    let currentStandardSheetsCount = 0;
+    let currentPhotoSheetsCount = 0;
+
+    for (const type in inventory) {
+        if (inventory[type].category === 'standard') {
+            currentStandardSheetsCount += inventory[type].count;
+        } else if (inventory[type].category === 'photo') {
+            currentPhotoSheetsCount += inventory[type].count;
+        }
+    }
+
+    const currentPriceBW = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 0;
+    const currentPriceColor = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 0;
+    const currentEstimatedValuePerPhotoSheet = photoYieldSettings.estimatedValuePerPhotoSheet;
+
+    document.getElementById('currentInventoryValueStandardBW').textContent = (currentStandardSheetsCount * currentPriceBW).toFixed(2);
+    document.getElementById('currentInventoryValueStandardColor').textContent = (currentStandardSheetsCount * currentPriceColor).toFixed(2);
+    document.getElementById('currentInventoryValuePhotoPaper').textContent = (currentPhotoSheetsCount * currentEstimatedValuePerPhotoSheet).toFixed(2);
+}
+
 
 // --- Dropdown Population Functions ---
 function populatePaperTypeDropdown() {
@@ -655,7 +874,7 @@ function populatePaperTypeDropdown() {
   sortedPaperTypes.forEach(type => {
     const option = document.createElement('option');
     option.value = type;
-    option.textContent = type;
+    option.textContent = `${type} (${inventory[type].category})`;
     paperTypeSelect.appendChild(option);
   });
 }
@@ -698,11 +917,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isSetupComplete !== 'true') {
         showSetupModal();
     } else {
-        document.getElementById('priceBW').value = priceBW;
-        document.getElementById('priceColor').value = priceColor;
+        document.getElementById('priceBW').value = pricing["Standard B&W Price"].value;
+        document.getElementById('priceColor').value = pricing["Standard Color Price"].value;
 
-        calculateInitialEstimatedProfit();
-
+        setInitialBaselines();
         updateDisplay();
         renderChart();
         displayHistory();
@@ -729,6 +947,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('editJobModalOverlay').addEventListener('click', (event) => {
         if (event.target === event.currentTarget) hideEditJobModal();
     });
+    document.getElementById('managePricingModalOverlay').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) hideManagePricingModal();
+    });
+    document.getElementById('importFileInput').addEventListener('change', handleImportFileSelect);
+    document.getElementById('importDataButton').addEventListener('click', triggerImportData); // Corrected ID and function call
 });
 
 // --- Main Display Update ---
@@ -738,11 +961,14 @@ function updateDisplay() {
     populatePrintTypeDropdown();
     populateBundleTypeDropdown();
     
-    document.getElementById('priceBW').value = priceBW;
-    document.getElementById('priceColor').value = priceColor;
+    document.getElementById('priceBW').value = pricing["Standard B&W Price"].value;
+    document.getElementById('priceColor').value = pricing["Standard Color Price"].value;
 
-    document.getElementById('estProfitBW').textContent = initialEstimatedProfitBW.toFixed(2);
-    document.getElementById('estProfitColor').textContent = initialEstimatedProfitColor.toFixed(2);
+    document.getElementById('estProfitStandardBW').textContent = baselineEstimatedStandardBWProfit.toFixed(2);
+    document.getElementById('estProfitStandardColor').textContent = baselineEstimatedStandardColorProfit.toFixed(2);
+    document.getElementById('estProfitPhotoPaper').textContent = baselineEstimatedPhotoProfit.toFixed(2);
+
+    calculateCurrentInventoryValues();
 
     updateTotals(history);
 }
@@ -750,11 +976,22 @@ function updateDisplay() {
 // --- Reset Inventory Function ---
 function resetInventory() {
     if (confirm("Are you sure you want to reset all inventory counts? This will clear all job history and reset initial profit estimations.")) {
-        inventory = { "A4": 500, "Letter": 500, "Legal": 500 };
+        inventory = {
+            "A4": { count: 500, category: 'standard' },
+            "Letter": { count: 500, category: 'standard' },
+            "Legal": { count: 500, category: 'standard' },
+            "A4 Sticker Photo Paper": { count: 100, category: 'photo' }
+        };
+        pricing = {
+            "Standard B&W Price": { value: 1, category: "standard" },
+            "Standard Color Price": { value: 5, category: "standard" },
+            "Full Page Photo Price": { value: 150, category: "photo" }
+        };
         printJobTypes = { 
             "Single-sided": { type: 'standard', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
             "Double-sided": { type: 'standard', multiplier: 2, basePrice: 0, bundleQuantity: 0 },
-            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
+            "Photo Quality": { type: 'photo_bundle', multiplier: 1, basePrice: 0, bundleQuantity: 0 },
+            "Full Page Photo Print": { type: 'full_page_photo', multiplier: 1, basePrice: 0, bundleQuantity: 0 }
         };
         photoBundles = {
             "Set A": { price: 40, composition: { '2x2': 2, '1x1': 8 } },
@@ -762,8 +999,8 @@ function resetInventory() {
             "Set C": { price: 50, composition: { '2x2': 4, '1x1': 8 } },
             "Set D": { price: 40, composition: { '2x2': 4, '1x1': 0 } }
         };
-        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40 }; 
-        photoPaperCumulativeFractionUsed = 0; // NEW: Reset cumulative fraction
+        photoYieldSettings = { paperType: 'A4 Sticker Photo Paper', max2x2PerA4: 20, max1x1PerA4: 40, estimatedValuePerPhotoSheet: 150 }; 
+        photoPaperCumulativeFractionUsed = 0;
         history = [];
         
         localStorage.setItem('isSetupComplete', 'false');
@@ -787,20 +1024,36 @@ function togglePrintJobInputs() {
 
     const standardInputsDiv = document.getElementById('standardPrintInputs');
     const photoBundleInputsDiv = document.getElementById('photoBundleInputs');
+    const fullPagePhotoInputsDiv = document.getElementById('fullPagePhotoInputs');
     const addPrintJobButton = document.getElementById('addPrintJobBtn');
     const addBundleJobButton = document.getElementById('addBundleJobBtn');
+    const addFullPagePhotoBtn = document.getElementById('addFullPagePhotoBtn');
 
-    if (selectedPrintType && selectedPrintType.type === 'photo_bundle') {
-        standardInputsDiv.style.display = 'none';
-        photoBundleInputsDiv.style.display = 'block';
-        addPrintJobButton.style.display = 'none';
-        addBundleJobButton.style.display = 'inline-block';
-    } else {
-        standardInputsDiv.style.display = 'block';
-        photoBundleInputsDiv.style.display = 'none';
-        addPrintJobButton.style.display = 'inline-block';
-        addBundleJobButton.style.display = 'none';
-        toggleAddPrintJobButton();
+    standardInputsDiv.style.display = 'none';
+    photoBundleInputsDiv.style.display = 'none';
+    fullPagePhotoInputsDiv.style.display = 'none';
+    addPrintJobButton.style.display = 'none';
+    addBundleJobButton.style.display = 'none';
+    addFullPagePhotoBtn.style.display = 'none';
+
+    if (selectedPrintType) {
+        if (selectedPrintType.type === 'standard') {
+            standardInputsDiv.style.display = 'block';
+            addPrintJobButton.style.display = 'inline-block';
+            toggleAddPrintJobButton();
+        } else if (selectedPrintType.type === 'photo_bundle') {
+            photoBundleInputsDiv.style.display = 'block';
+            addBundleJobButton.style.display = 'inline-block';
+        } else if (selectedPrintType.type === 'full_page_photo') {
+            fullPagePhotoInputsDiv.style.display = 'block';
+            addFullPagePhotoBtn.style.display = 'inline-block';
+            const photoPaperType = photoYieldSettings.paperType;
+            if (inventory.hasOwnProperty(photoPaperType) && inventory[photoPaperType].category === 'photo') {
+                document.getElementById('paperType').value = photoPaperType;
+            } else {
+                alert(`Warning: Photo paper type "${photoPaperType}" is not set or is not a 'photo' category paper. Please check "Manage Photo ID Bundles".`);
+            }
+        }
     }
 }
 
@@ -818,6 +1071,11 @@ function addStandardPrintJob() {
         alert('Please select a valid Print Type.');
         return;
     }
+    if (!inventory.hasOwnProperty(paperType) || inventory[paperType].category !== 'standard') {
+        alert('Please select a standard paper type for this print job.');
+        return;
+    }
+
 
     const selectedPrintType = printJobTypes[printTypeName];
     const multiplier = selectedPrintType.multiplier;
@@ -826,15 +1084,15 @@ function addStandardPrintJob() {
 
     let paperConsumed = bwPages + coloredPages + rejectedBW + rejectedColor;
 
-    if (inventory[paperType] === undefined || inventory[paperType] < paperConsumed) {
-        alert(`Not enough ${paperType} paper! You need ${paperConsumed} sheets, but only have ${inventory[paperType] !== undefined ? inventory[paperType] : 0}.`);
+    if (inventory[paperType].count < paperConsumed) {
+        alert(`Not enough ${paperType} paper! You need ${paperConsumed} sheets, but only have ${inventory[paperType].count}.`);
         return;
     }
 
-    inventory[paperType] -= paperConsumed;
+    inventory[paperType].count -= paperConsumed;
 
-    let effectivePriceBW = priceBW * multiplier;
-    let effectivePriceColor = priceColor * multiplier;
+    let effectivePriceBW = pricing["Standard B&W Price"].value * multiplier;
+    let effectivePriceColor = pricing["Standard Color Price"].value * multiplier;
     
     let totalCost = basePrice;
 
@@ -855,8 +1113,8 @@ function addStandardPrintJob() {
     }
 
 
-    const lossBW = rejectedBW * priceBW;
-    const lossColor = rejectedColor * priceColor;
+    const lossBW = rejectedBW * pricing["Standard B&W Price"].value;
+    const lossColor = rejectedColor * pricing["Standard Color Price"].value;
     const totalLoss = lossBW + lossColor; 
 
     const netProfit = totalCost - totalLoss;
@@ -865,6 +1123,7 @@ function addStandardPrintJob() {
         type: 'print',
         date: new Date().toISOString().split('T')[0],
         paperType,
+        paperCategory: inventory[paperType].category,
         printType: printTypeName,
         bwPages,
         coloredPages,
@@ -905,8 +1164,8 @@ function addPhotoBundleJob() {
         alert('Bundle quantity must be at least 1.');
         return;
     }
-    if (!photoYieldSettings.paperType || inventory[photoYieldSettings.paperType] === undefined) {
-        alert(`Please select a valid "Paper Type for Bundles" in "Manage Photo ID Bundles" modal, and ensure it exists in your inventory.`);
+    if (!photoYieldSettings.paperType || !inventory.hasOwnProperty(photoYieldSettings.paperType) || inventory[photoYieldSettings.paperType].category !== 'photo') {
+        alert(`Please select a valid "Photo Paper Type" in "Manage Photo ID Bundles" modal, and ensure it exists in your inventory and is categorized as 'photo'.`);
         return;
     }
 
@@ -925,14 +1184,14 @@ function addPhotoBundleJob() {
 
     const photoPaperType = photoYieldSettings.paperType;
 
-    if (inventory[photoPaperType] < wholeSheetsToDeductThisTransaction) {
-        alert(`Not enough "${photoPaperType}" paper! You need to deduct ${wholeSheetsToDeductThisTransaction} sheets, but only have ${inventory[photoPaperType]}.`);
+    if (inventory[photoPaperType].count < wholeSheetsToDeductThisTransaction) {
+        alert(`Not enough "${photoPaperType}" paper! You need to deduct ${wholeSheetsToDeductThisTransaction} sheets, but only have ${inventory[photoPaperType].count}.`);
         photoPaperCumulativeFractionUsed -= fractionalSheetsForCurrentJob;
         return;
     }
 
-    inventory[photoPaperType] -= wholeSheetsToDeductThisTransaction;
-    photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5)); // Use toFixed for precision
+    inventory[photoPaperType].count -= wholeSheetsToDeductThisTransaction;
+    photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5));
 
     const totalCost = pricePerBundle * bundleQty;
     const totalLoss = 0;
@@ -942,12 +1201,13 @@ function addPhotoBundleJob() {
         type: 'photo_bundle',
         date: new Date().toISOString().split('T')[0],
         paperType: photoPaperType,
+        paperCategory: inventory[photoPaperType].category,
         bundleName: bundleName,
         bundleQuantity: bundleQty,
         bundlePricePerUnit: pricePerBundle,
         bundleComposition: selectedBundle.composition,
-        paperConsumed: wholeSheetsToDeductThisTransaction, // Actual whole sheets deducted in this transaction
-        jobFractionalSheetsConsumed: fractionalSheetsForCurrentJob, // The precise fractional amount for this job
+        paperConsumed: wholeSheetsToDeductThisTransaction,
+        jobFractionalSheetsConsumed: fractionalSheetsForCurrentJob,
         totalCost: totalCost,
         totalLoss: totalLoss,
         netProfit: netProfit,
@@ -962,6 +1222,59 @@ function addPhotoBundleJob() {
     renderChart();
     document.getElementById('bundleQuantity').value = 1;
     alert(`Added ${bundleQty} x "${bundleName}" job. (Deducted ${wholeSheetsToDeductThisTransaction} sheets. Cumulative fraction: ${photoPaperCumulativeFractionUsed.toFixed(2)})`);
+}
+
+// NEW: Add Full Page Photo Job Function
+function addFullPagePhotoJob() {
+    const qty = parseInt(document.getElementById('fullPhotoQty').value) || 0;
+    const photoPaperType = document.getElementById('paperType').value;
+
+    if (qty <= 0) {
+        alert('Quantity of photo sheets must be at least 1.');
+        return;
+    }
+    if (!inventory.hasOwnProperty(photoPaperType) || inventory[photoPaperType].category !== 'photo') {
+        alert(`Please select a valid 'photo' category paper type for this job.`);
+        return;
+    }
+    
+    const pricePerSheet = pricing["Full Page Photo Price"] ? pricing["Full Page Photo Price"].value : 0;
+    if (pricePerSheet <= 0) {
+        alert('Please set the "Full Page Photo Price" in "Manage Pricing" modal.');
+        return;
+    }
+
+    if (inventory[photoPaperType].count < qty) {
+        alert(`Not enough "${photoPaperType}" paper! You need ${qty} sheets, but only have ${inventory[photoPaperType].count}.`);
+        return;
+    }
+
+    inventory[photoPaperType].count -= qty;
+
+    const totalCost = qty * pricePerSheet;
+    const totalLoss = 0;
+    const netProfit = totalCost;
+
+    const job = {
+        type: 'full_page_photo',
+        date: new Date().toISOString().split('T')[0],
+        paperType: photoPaperType,
+        paperCategory: inventory[photoPaperType].category,
+        quantity: qty,
+        pricePerUnit: pricePerSheet,
+        paperConsumed: qty,
+        totalCost: totalCost,
+        totalLoss: totalLoss,
+        netProfit: netProfit
+    };
+
+    history.push(job);
+    saveData();
+    updateDisplay();
+    displayHistory();
+    renderChart();
+    document.getElementById('fullPhotoQty').value = 1;
+    alert(`Added ${qty} x Full Page Photo Print job.`);
 }
 
 
@@ -1017,6 +1330,13 @@ function displayHistory(filteredHistory = history) {
                 Fractional Sheets Used: ${job.jobFractionalSheetsConsumed.toFixed(2)} (Actual Deduction: ${job.paperConsumed} sheets)<br>
                 Profit: ₱${job.netProfit.toFixed(2)}
             `;
+        } else if (job.type === 'full_page_photo') {
+            jobDetailsHtml = `
+                <strong>${job.date}</strong> - Full Page Photo Print (x${job.quantity})<br>
+                Paper Type: ${job.paperType.toUpperCase()}<br>
+                Total Sheets Used: ${job.paperConsumed}<br>
+                Profit: ₱${job.netProfit.toFixed(2)}
+            `;
         }
         
         listItem.innerHTML = `
@@ -1049,7 +1369,7 @@ function showEditJobModal(index) {
     sortedPaperTypes.forEach(type => {
         const option = document.createElement('option');
         option.value = type;
-        option.textContent = type;
+        option.textContent = `${type} (${inventory[type].category})`;
         editJobPaperTypeSelect.appendChild(option);
     });
     editJobPaperTypeSelect.value = job.paperType;
@@ -1070,19 +1390,20 @@ function showEditJobModal(index) {
 
     const editStandardPrintFields = document.getElementById('editStandardPrintFields');
     const editPhotoBundleFields = document.getElementById('editPhotoBundleFields');
+    const editFullPagePhotoFields = document.getElementById('editFullPagePhotoFields');
+
+    editStandardPrintFields.style.display = 'none';
+    editPhotoBundleFields.style.display = 'none';
+    editFullPagePhotoFields.style.display = 'none';
 
     if (job.type === 'print') {
         editStandardPrintFields.style.display = 'block';
-        editPhotoBundleFields.style.display = 'none';
-
         document.getElementById('editJobBW').value = job.bwPages;
         document.getElementById('editJobColored').value = job.coloredPages;
         document.getElementById('editJobRejectedBW').value = job.rejectedBW;
         document.getElementById('editJobRejectedColor').value = job.rejectedColor;
     } else if (job.type === 'photo_bundle') {
-        editStandardPrintFields.style.display = 'none';
         editPhotoBundleFields.style.display = 'block';
-
         const editJobBundleNameSelect = document.getElementById('editJobBundleName');
         editJobBundleNameSelect.innerHTML = '';
         const sortedBundleNames = Object.keys(photoBundles).sort();
@@ -1094,6 +1415,9 @@ function showEditJobModal(index) {
         });
         editJobBundleNameSelect.value = job.bundleName;
         document.getElementById('editJobBundleQuantity').value = job.bundleQuantity;
+    } else if (job.type === 'full_page_photo') {
+        editFullPagePhotoFields.style.display = 'block';
+        document.getElementById('editJobFullPhotoQty').value = job.quantity;
     }
 
     document.getElementById('editJobModalOverlay').classList.add('show');
@@ -1103,14 +1427,21 @@ function toggleEditJobFields(selectedPrintTypeName) {
     const selectedPrintType = printJobTypes[selectedPrintTypeName];
     const editStandardPrintFields = document.getElementById('editStandardPrintFields');
     const editPhotoBundleFields = document.getElementById('editPhotoBundleFields');
+    const editFullPagePhotoFields = document.getElementById('editFullPagePhotoFields');
 
-    if (selectedPrintType && selectedPrintType.type === 'photo_bundle') {
-        editStandardPrintFields.style.display = 'none';
-        editPhotoBundleFields.style.display = 'block';
-        populateBundleTypeDropdownForEditJob();
-    } else {
-        editStandardPrintFields.style.display = 'block';
-        editPhotoBundleFields.style.display = 'none';
+    editStandardPrintFields.style.display = 'none';
+    editPhotoBundleFields.style.display = 'none';
+    editFullPagePhotoFields.style.display = 'none';
+
+    if (selectedPrintType) {
+        if (selectedPrintType.type === 'standard') {
+            editStandardPrintFields.style.display = 'block';
+        } else if (selectedPrintType.type === 'photo_bundle') {
+            editPhotoBundleFields.style.display = 'block';
+            populateBundleTypeDropdownForEditJob();
+        } else if (selectedPrintType.type === 'full_page_photo') {
+            editFullPagePhotoFields.style.display = 'block';
+        }
     }
 }
 
@@ -1142,23 +1473,22 @@ function saveEditedJob() {
     const newPrintTypeName = document.getElementById('editJobPrintType').value;
 
     // --- REVERT OLD JOB'S INVENTORY IMPACT ---
-    if (oldJob.type === 'print') {
-        if (inventory[oldJob.paperType] !== undefined) {
-            inventory[oldJob.paperType] += oldJob.paperConsumed;
+    if (oldJob.type === 'print' || oldJob.type === 'full_page_photo') {
+        if (inventory.hasOwnProperty(oldJob.paperType)) {
+            inventory[oldJob.paperType].count += oldJob.paperConsumed;
         } else {
-            inventory[oldJob.paperType] = oldJob.paperConsumed;
+            inventory[oldJob.paperType] = { count: oldJob.paperConsumed, category: oldJob.paperCategory || 'standard' };
         }
     } else if (oldJob.type === 'photo_bundle') {
         photoPaperCumulativeFractionUsed -= oldJob.jobFractionalSheetsConsumed;
-        // Handle potential negative fraction by refunding whole sheets
         if (photoPaperCumulativeFractionUsed < 0) {
             let sheetsToRefund = Math.ceil(Math.abs(photoPaperCumulativeFractionUsed));
-            if (inventory[oldJob.paperType] !== undefined) {
-                inventory[oldJob.paperType] += sheetsToRefund;
+            if (inventory.hasOwnProperty(oldJob.paperType)) {
+                inventory[oldJob.paperType].count += sheetsToRefund;
             } else {
-                inventory[oldJob.paperType] = sheetsToRefund;
+                inventory[oldJob.paperType] = { count: sheetsToRefund, category: oldJob.paperCategory || 'photo' };
             }
-            photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed + sheetsToRefund).toFixed(5)); // Adjust fraction to be positive
+            photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed + sheetsToRefund).toFixed(5));
         }
     }
     // --- END REVERT OLD JOB'S INVENTORY IMPACT ---
@@ -1168,6 +1498,7 @@ function saveEditedJob() {
     updatedJob.date = newDate;
     updatedJob.paperType = newPaperType;
     updatedJob.printType = newPrintTypeName;
+    updatedJob.paperCategory = inventory[newPaperType] ? inventory[newPaperType].category : 'standard';
 
     const selectedPrintTypeDefinition = printJobTypes[newPrintTypeName];
 
@@ -1177,23 +1508,25 @@ function saveEditedJob() {
         const newRejectedBW = parseInt(document.getElementById('editJobRejectedBW').value) || 0;
         const newRejectedColor = parseInt(document.getElementById('editJobRejectedColor').value) || 0;
 
+        if (!inventory.hasOwnProperty(newPaperType) || inventory[newPaperType].category !== 'standard') {
+            alert(`Selected paper type "${newPaperType}" is not a standard paper. Please select a standard paper for this print job.`);
+            return;
+        }
+
         const multiplier = selectedPrintTypeDefinition.multiplier;
         const basePrice = selectedPrintTypeDefinition.basePrice;
         const bundleQuantity = selectedPrintTypeDefinition.bundleQuantity;
 
         const newPaperConsumed = newBWPages + newColoredPages + newRejectedBW + newRejectedColor;
 
-        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newPaperConsumed) {
-            alert(`Not enough ${newPaperType} paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
-            // Revert inventory changes made at the start of saveEditedJob before returning
-            // This is complex for photo bundles, so we'll simplify: just alert and return, leaving inventory as is.
-            // For standard print jobs, the initial refund is correct.
+        if (inventory[newPaperType].count < newPaperConsumed) {
+            alert(`Not enough ${newPaperType} paper for edited job! You need ${newPaperConsumed} sheets, but only have ${inventory[newPaperType].count}.`);
             return;
         }
-        inventory[newPaperType] -= newPaperConsumed;
+        inventory[newPaperType].count -= newPaperConsumed;
 
-        let effectivePriceBW = priceBW * multiplier;
-        let effectivePriceColor = priceColor * multiplier;
+        let effectivePriceBW = pricing["Standard B&W Price"].value * multiplier;
+        let effectivePriceColor = pricing["Standard Color Price"].value * multiplier;
         
         let newTotalCost = basePrice;
         let totalSuccessfulPages = newBWPages + newColoredPages;
@@ -1211,8 +1544,8 @@ function saveEditedJob() {
             }
         }
 
-        const newLossBW = newRejectedBW * priceBW;
-        const newLossColor = newRejectedColor * priceColor;
+        const newLossBW = newRejectedBW * pricing["Standard B&W Price"].value;
+        const newLossColor = newRejectedColor * pricing["Standard Color Price"].value;
         const newTotalLoss = newLossBW + newLossColor; 
         const newNetProfit = newTotalCost - newTotalLoss;
 
@@ -1235,19 +1568,25 @@ function saveEditedJob() {
         const newBundleName = document.getElementById('editJobBundleName').value;
         const newBundleQuantity = parseInt(document.getElementById('editJobBundleQuantity').value) || 0;
 
+        if (!inventory.hasOwnProperty(newPaperType) || inventory[newPaperType].category !== 'photo') {
+            alert(`Selected paper type "${newPaperType}" is not a photo paper. Please select a photo paper for this bundle job.`);
+            return;
+        }
+
         if (!newBundleName || !photoBundles.hasOwnProperty(newBundleName)) {
             alert('Please select a valid Photo ID Bundle for the edited job.');
-            // Inventory was already reverted, so just return
             return;
         }
         if (newBundleQuantity <= 0) {
             alert('Bundle quantity must be at least 1.');
-            // Inventory was already reverted, so just return
             return;
         }
-        if (!photoYieldSettings.paperType || inventory[photoYieldSettings.paperType] === undefined) {
-            alert(`Please select a valid "Paper Type for Bundles" in "Manage Photo ID Bundles" modal, and ensure it exists in your inventory.`);
-            // Inventory was already reverted, so just return
+        if (photoYieldSettings.max2x2PerA4 <= 0 || photoYieldSettings.max1x1PerA4 <= 0) {
+            alert(`Please set "Max 2x2s per A4" and "Max 1x1s per A4" yields in "Manage Photo ID Bundles" modal.`);
+            return;
+        }
+        if (!photoYieldSettings.paperType || !inventory.hasOwnProperty(photoYieldSettings.paperType) || inventory[photoYieldSettings.paperType].category !== 'photo') {
+            alert(`Please ensure "Paper Type for Bundles" is set and is a valid 'photo' category paper in "Manage Photo ID Bundles" modal.`);
             return;
         }
 
@@ -1257,24 +1596,20 @@ function saveEditedJob() {
         const consumptionResult = calculateBundleSheetConsumption(selectedBundle.composition, newBundleQuantity);
         if (consumptionResult.error) {
             alert(consumptionResult.error);
-            // Inventory was already reverted, so just return
             return;
         }
         const newFractionalSheetsForJob = consumptionResult.fractionalSheets;
 
-        // --- APPLY NEW JOB'S INVENTORY IMPACT (CUMULATIVE FRACTIONAL) ---
         photoPaperCumulativeFractionUsed += newFractionalSheetsForJob;
         let newWholeSheetsToDeduct = Math.floor(photoPaperCumulativeFractionUsed);
 
-        if (inventory[newPaperType] === undefined || inventory[newPaperType] < newWholeSheetsToDeduct) {
-            alert(`Not enough "${newPaperType}" paper for edited job! You need to deduct ${newWholeSheetsToDeduct} sheets, but only have ${inventory[newPaperType] !== undefined ? inventory[newPaperType] : 0}.`);
-            photoPaperCumulativeFractionUsed -= newFractionalSheetsForJob; // Revert fraction
-            // Inventory was already reverted, so just return
+        if (inventory[newPaperType].count < newWholeSheetsToDeduct) {
+            alert(`Not enough "${newPaperType}" paper for edited job! You need to deduct ${newWholeSheetsToDeduct} sheets, but only have ${inventory[newPaperType].count}.`);
+            photoPaperCumulativeFractionUsed -= newFractionalSheetsForJob;
             return;
         }
-        inventory[newPaperType] -= newWholeSheetsToDeduct;
-        photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5)); // Keep remaining fraction
-        // --- END APPLY NEW JOB'S INVENTORY IMPACT ---
+        inventory[newPaperType].count -= newWholeSheetsToDeduct;
+        photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed % 1).toFixed(5));
 
         const newTotalCost = pricePerBundle * newBundleQuantity;
         const newTotalLoss = 0;
@@ -1286,24 +1621,57 @@ function saveEditedJob() {
             bundleQuantity: newBundleQuantity,
             bundlePricePerUnit: pricePerBundle,
             bundleComposition: selectedBundle.composition,
-            paperConsumed: newWholeSheetsToDeduct, // Actual whole sheets deducted
-            jobFractionalSheetsConsumed: newFractionalSheetsForJob, // Precise fractional amount
+            paperConsumed: newWholeSheetsToDeduct,
+            jobFractionalSheetsConsumed: newFractionalSheetsForJob,
             totalCost: newTotalCost,
             totalLoss: newTotalLoss,
             netProfit: newNetProfit,
             jobYieldMax2x2PerA4: photoYieldSettings.max2x2PerA4,
             jobYieldMax1x1PerA4: photoYieldSettings.max1x1PerA4
         });
+    } else if (selectedPrintTypeDefinition.type === 'full_page_photo') {
+        const newQuantity = parseInt(document.getElementById('editJobFullPhotoQty').value) || 0;
+
+        if (!inventory.hasOwnProperty(newPaperType) || inventory[newPaperType].category !== 'photo') {
+            alert(`Selected paper type "${newPaperType}" is not a photo paper. Please select a photo paper for this full page print job.`);
+            return;
+        }
+
+        const pricePerSheet = pricing["Full Page Photo Price"] ? pricing["Full Page Photo Price"].value : 0;
+        if (pricePerSheet <= 0) {
+            alert('Please set the "Full Page Photo Price" in "Manage Pricing" modal.');
+            return;
+        }
+
+        if (inventory[newPaperType].count < newQuantity) {
+            alert(`Not enough "${newPaperType}" paper! You need ${newQuantity} sheets, but only have ${inventory[newPaperType].count}.`);
+            return;
+        }
+
+        inventory[newPaperType].count -= newQuantity;
+
+        const newTotalCost = newQuantity * pricePerSheet;
+        const newTotalLoss = 0;
+        const newNetProfit = newTotalCost;
+
+        Object.assign(updatedJob, {
+            type: 'full_page_photo',
+            quantity: newQuantity,
+            pricePerUnit: pricePerSheet,
+            paperConsumed: newQuantity,
+            totalCost: newTotalCost,
+            totalLoss: newTotalLoss,
+            netProfit: newNetProfit
+        });
     } else {
         alert('Invalid print type selected for job edit.');
-        // Inventory was already reverted, so just return
         return;
     }
 
     history[currentEditingJobIndex] = updatedJob;
 
     saveData();
-    calculateInitialEstimatedProfit();
+    setInitialBaselines();
     updateDisplay();
     renderChart();
     displayHistory();
@@ -1315,20 +1683,20 @@ function deleteJob(index) {
     if (confirm(`Are you sure you want to delete this print job (${history[index].date} - ${history[index].paperType})? This cannot be undone.`)) {
         const jobToDelete = history[index];
         
-        if (jobToDelete.type === 'print') {
-            if (inventory[jobToDelete.paperType] !== undefined) {
-                inventory[jobToDelete.paperType] += jobToDelete.paperConsumed;
+        if (jobToDelete.type === 'print' || jobToDelete.type === 'full_page_photo') {
+            if (inventory.hasOwnProperty(jobToDelete.paperType)) {
+                inventory[jobToDelete.paperType].count += jobToDelete.paperConsumed;
             } else {
-                inventory[jobToDelete.paperType] = jobToDelete.paperConsumed;
+                inventory[jobToDelete.paperType] = { count: jobToDelete.paperConsumed, category: jobToDelete.paperCategory || 'standard' };
             }
         } else if (jobToDelete.type === 'photo_bundle') {
             photoPaperCumulativeFractionUsed -= jobToDelete.jobFractionalSheetsConsumed;
             if (photoPaperCumulativeFractionUsed < 0) {
                 let sheetsToRefund = Math.ceil(Math.abs(photoPaperCumulativeFractionUsed));
-                if (inventory[jobToDelete.paperType] !== undefined) {
-                    inventory[jobToDelete.paperType] += sheetsToRefund;
+                if (inventory.hasOwnProperty(jobToDelete.paperType)) {
+                    inventory[jobToDelete.paperType].count += sheetsToRefund;
                 } else {
-                    inventory[jobToDelete.paperType] = sheetsToRefund;
+                    inventory[jobToDelete.paperType] = { count: sheetsToRefund, category: jobToDelete.paperCategory || 'photo' };
                 }
                 photoPaperCumulativeFractionUsed = parseFloat((photoPaperCumulativeFractionUsed + sheetsToRefund).toFixed(5));
             }
@@ -1337,7 +1705,7 @@ function deleteJob(index) {
         history.splice(index, 1);
 
         saveData();
-        calculateInitialEstimatedProfit();
+        setInitialBaselines();
         updateDisplay();
         renderChart();
         displayHistory();
@@ -1350,8 +1718,10 @@ function deleteJob(index) {
 function updateTotals(dataForPeriod = history) {
     let totalProfitForPeriod = 0;
     let totalLossForPeriod = 0;
-    let totalBWSuccessfulSheetsPrintedOverall = 0;
-    let totalColoredSuccessfulSheetsPrintedOverall = 0;
+    
+    let totalStandardBWSuccessfulSheetsPrintedOverall = 0;
+    let totalStandardColoredSuccessfulSheetsPrintedOverall = 0;
+    let totalPhotoProfitEarnedOverall = 0;
 
     dataForPeriod.forEach(job => {
         totalProfitForPeriod += job.netProfit;
@@ -1359,25 +1729,32 @@ function updateTotals(dataForPeriod = history) {
     });
 
     history.forEach(job => {
-        if (job.type === 'print') {
-            totalBWSuccessfulSheetsPrintedOverall += job.bwPages;
-            totalColoredSuccessfulSheetsPrintedOverall += job.coloredPages;
+        if (job.type === 'print' && job.paperCategory === 'standard') {
+            totalStandardBWSuccessfulSheetsPrintedOverall += job.bwPages;
+            totalStandardColoredSuccessfulSheetsPrintedOverall += job.coloredPages;
+        } else if (job.type === 'photo_bundle' || job.type === 'full_page_photo') {
+            totalPhotoProfitEarnedOverall += job.netProfit;
         }
     });
 
-    const currentPriceBW = priceBW; 
-    const currentPriceColor = priceColor;
+    const currentPriceBW = pricing["Standard B&W Price"] ? pricing["Standard B&W Price"].value : 0;
+    const currentPriceColor = pricing["Standard Color Price"] ? pricing["Standard Color Price"].value : 0;
+    const currentEstimatedValuePerPhotoSheet = photoYieldSettings.estimatedValuePerPhotoSheet;
 
-    let profitLeftBW = initialEstimatedProfitBW - (totalBWSuccessfulSheetsPrintedOverall * currentPriceBW);
-    let profitLeftColor = initialEstimatedProfitColor - (totalColoredSuccessfulSheetsPrintedOverall * currentPriceColor);
+    let profitLeftStandardBW = baselineEstimatedStandardBWProfit - (totalStandardBWSuccessfulSheetsPrintedOverall * currentPriceBW);
+    let profitLeftStandardColor = baselineEstimatedStandardColorProfit - (totalStandardColoredSuccessfulSheetsPrintedOverall * currentPriceColor);
+    
+    let profitLeftPhotoPaper = baselineEstimatedPhotoProfit - totalPhotoProfitEarnedOverall;
 
-    profitLeftBW = Math.max(0, profitLeftBW);
-    profitLeftColor = Math.max(0, profitLeftColor);
+    profitLeftStandardBW = Math.max(0, profitLeftStandardBW);
+    profitLeftStandardColor = Math.max(0, profitLeftStandardColor);
+    profitLeftPhotoPaper = Math.max(0, profitLeftPhotoPaper);
 
     document.getElementById('totalProfit').textContent = totalProfitForPeriod.toFixed(2);
     document.getElementById('totalLoss').textContent = totalLossForPeriod.toFixed(2);
-    document.getElementById('profitLeftBW').textContent = profitLeftBW.toFixed(2);
-    document.getElementById('profitLeftColor').textContent = profitLeftColor.toFixed(2);
+    document.getElementById('profitLeftStandardBW').textContent = profitLeftStandardBW.toFixed(2);
+    document.getElementById('profitLeftStandardColor').textContent = profitLeftStandardColor.toFixed(2);
+    document.getElementById('profitLeftPhotoPaper').textContent = profitLeftPhotoPaper.toFixed(2);
 }
 
 // --- Filter Functions ---
@@ -1427,11 +1804,11 @@ function clearDateFilter() {
 function exportToFile() {
     const data = JSON.stringify({
         inventory,
-        priceBW,
-        priceColor,
+        pricing,
         history,
-        initialEstimatedProfitBW,
-        initialEstimatedProfitColor,
+        baselineEstimatedStandardBWProfit,
+        baselineEstimatedStandardColorProfit,
+        baselineEstimatedPhotoProfit,
         printJobTypes,
         photoBundles,
         photoYieldSettings,

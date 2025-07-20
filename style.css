@@ -261,10 +261,11 @@ p span {
 #managePrintTypesModalOverlay { z-index: 1020; }
 #managePhotoBundlesModalOverlay { z-index: 1030; }
 #editJobModalOverlay { z-index: 1040; }
-#addBundleJobModalOverlay { z-index: 1050; } /* Highest z-index for add bundle job modal */
+#addBundleJobModalOverlay { z-index: 1050; }
+#managePricingModalOverlay { z-index: 1060; }
 
 
-#setupModalOverlay, #addPaperModalOverlay, #managePrintTypesModalOverlay, #editJobModalOverlay, #addBundleJobModalOverlay, #managePhotoBundlesModalOverlay {
+#setupModalOverlay, #addPaperModalOverlay, #managePrintTypesModalOverlay, #editJobModalOverlay, #addBundleJobModalOverlay, #managePhotoBundlesModalOverlay, #managePricingModalOverlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -279,22 +280,22 @@ p span {
   transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
-#setupModalOverlay.show, #addPaperModalOverlay.show, #managePrintTypesModalOverlay.show, #editJobModalOverlay.show, #addBundleJobModalOverlay.show, #managePhotoBundlesModalOverlay.show {
+#setupModalOverlay.show, #addPaperModalOverlay.show, #managePrintTypesModalOverlay.show, #editJobModalOverlay.show, #addBundleJobModalOverlay.show, #managePhotoBundlesModalOverlay.show, #managePricingModalOverlay.show {
   opacity: 1;
   visibility: visible;
 }
 
-#setupModalContent, #addPaperModalContent, #managePrintTypesModalContent, #editJobModalContent, #addBundleJobModalContent, #managePhotoBundlesModalContent {
+#setupModalContent, #addPaperModalContent, #managePrintTypesModalContent, #editJobModalContent, #addBundleJobModalContent, #managePhotoBundlesModalContent, #managePricingModalContent {
   background: white;
   padding: 30px;
   border-radius: 10px;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   width: 90%;
-  max-width: 700px; /* Increased max-width for landscape view */
+  max-width: 700px;
   transform: translateY(-20px);
   transition: transform 0.3s ease;
-  max-height: 90vh; /* Limit height to prevent overflow on smaller screens */
-  overflow-y: auto; /* Enable scrolling if content exceeds max-height */
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 #setupModalOverlay.show #setupModalContent,
@@ -302,32 +303,33 @@ p span {
 #managePrintTypesModalOverlay.show #managePrintTypesModalContent,
 #editJobModalOverlay.show #editJobModalContent,
 #addBundleJobModalOverlay.show #addBundleJobModalContent,
-#managePhotoBundlesModalOverlay.show #managePhotoBundlesModalContent {
+#managePhotoBundlesModalOverlay.show #managePhotoBundlesModalContent,
+#managePricingModalOverlay.show #managePricingModalContent {
   transform: translateY(0);
 }
 
-#setupModalContent h2, #addPaperModalContent h2, #managePrintTypesModalContent h2, #editJobModalContent h2, #addBundleJobModalContent h2, #managePhotoBundlesModalContent h2 {
+#setupModalContent h2, #addPaperModalContent h2, #managePrintTypesModalContent h2, #editJobModalContent h2, #addBundleJobModalContent h2, #managePhotoBundlesModalContent h2, #managePricingModalContent h2 {
   text-align: center;
   margin-bottom: 20px;
   color: #2c3e50;
 }
 
-#setupModalContent label, #addPaperModalContent label, #managePrintTypesModalContent label, #editJobModalContent label, #addBundleJobModalContent label, #managePhotoBundlesModalContent label {
+#setupModalContent label, #addPaperModalContent label, #managePrintTypesModalContent label, #editJobModalContent label, #addBundleJobModalContent label, #managePhotoBundlesModalContent label, #managePricingModalContent label {
   margin-bottom: 15px;
 }
 
-#setupModalContent button, #addPaperModalContent button, #managePrintTypesModalContent button, #editJobModalContent button, #addBundleJobModalContent button, #managePhotoBundlesModalContent button {
+#setupModalContent button, #addPaperModalContent button, #managePrintTypesModalContent button, #editJobModalContent button, #addBundleJobModalContent button, #managePhotoBundlesModalContent button, #managePricingModalContent button {
   width: 100%;
   margin-top: 20px;
   padding: 12px;
   font-size: 1.1rem;
 }
-#managePrintTypesModalContent .modal-buttons, #editJobModalContent .modal-buttons, #addBundleJobModalContent .modal-buttons, #managePhotoBundlesModalContent .modal-buttons {
+#managePrintTypesModalContent .modal-buttons, #editJobModalContent .modal-buttons, #addBundleJobModalContent .modal-buttons, #managePhotoBundlesModalContent .modal-buttons, #managePricingModalContent .modal-buttons {
     display: flex;
     gap: 10px;
     margin-top: 20px;
 }
-#managePrintTypesModalContent .modal-buttons button, #editJobModalContent .modal-buttons button, #addBundleJobModalContent .modal-buttons button, #managePhotoBundlesModalContent .modal-buttons button {
+#managePrintTypesModalContent .modal-buttons button, #editJobModalContent .modal-buttons button, #addBundleJobModalContent .modal-buttons button, #managePhotoBundlesModalContent .modal-buttons button, #managePricingModalContent .modal-buttons button {
     flex: 1;
     margin: 0;
 }
@@ -379,7 +381,7 @@ p span {
 }
 
 /* Print Job Type Management Modal specific styles */
-#printTypeManagementList, #photoBundleManagementList {
+#printTypeManagementList, #photoBundleManagementList, #pricingManagementList {
     list-style: none;
     padding: 0;
     max-height: 250px;
@@ -388,7 +390,7 @@ p span {
     border-radius: 6px;
     margin-top: 15px;
 }
-#printTypeManagementList li, #photoBundleManagementList li {
+#printTypeManagementList li, #photoBundleManagementList li, #pricingManagementList li {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -398,17 +400,19 @@ p span {
     flex-wrap: wrap;
     gap: 5px;
 }
-#printTypeManagementList li:last-child, #photoBundleManagementList li:last-child {
+#printTypeManagementList li:last-child, #photoBundleManagementList li:last-child, #pricingManagementList li:last-child {
     border-bottom: none;
 }
-#printTypeManagementList li span, #photoBundleManagementList li span {
+#printTypeManagementList li span, #photoBundleManagementList li span, #pricingManagementList li span {
     flex-grow: 1;
     font-weight: 500;
 }
 #printTypeManagementList li input[type="text"],
 #printTypeManagementList li input[type="number"],
 #photoBundleManagementList li input[type="text"],
-#photoBundleManagementList li input[type="number"] {
+#photoBundleManagementList li input[type="number"],
+#pricingManagementList li input[type="text"],
+#pricingManagementList li input[type="number"] {
     width: 80px;
     margin-right: 5px;
     margin-bottom: 0;
@@ -419,7 +423,8 @@ p span {
     width: 120px;
 }
 #printTypeManagementList li .item-actions button,
-#photoBundleManagementList li .item-actions button {
+#photoBundleManagementList li .item-actions button,
+#pricingManagementList li .item-actions button {
     padding: 4px 8px;
     font-size: 0.75rem;
     margin: 0 2px;
@@ -466,10 +471,10 @@ p span {
 .button-group-vertical {
     display: flex;
     flex-direction: column;
-    gap: 8px; /* Space between buttons */
-    margin-top: 15px; /* Space from elements above */
+    gap: 8px;
+    margin-top: 15px;
 }
 .button-group-vertical button {
-    width: 100%; /* Make buttons take full width of their container */
-    margin: 0; /* Override individual button margins */
+    width: 100%;
+    margin: 0;
 }
