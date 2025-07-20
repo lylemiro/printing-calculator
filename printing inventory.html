@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Printing Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f0f2f5, #e6e9ee);
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: #2c3e50;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      font-size: 1.8rem;
+      font-weight: bold;
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+      letter-spacing: 1px;
+      text-shadow: none;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      padding: 20px;
+    }
+
+    section {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      animation: fadeInScale 0.6s ease-out forwards;
+      opacity: 0;
+      transform: scale(0.98);
+    }
+
+    section:nth-child(1) { animation-delay: 0.1s; }
+    section:nth-child(2) { animation-delay: 0.2s; }
+    section:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes fadeInScale {
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    h2, h3 {
+      color: #34495e;
+      margin-top: 0;
+      text-transform: none;
+      font-weight: 700;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 5px;
+      font-weight: 500;
+      color: #555;
+    }
+
+    input[type="number"], input[type="date"], select {
+      width: 100%;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1rem;
+      box-sizing: border-box;
+      transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+
+    input[type="number"]:focus,
+    input[type="date"]:focus,
+    select:focus {
+      border-color: #5b9bd5;
+      box-shadow: 0 0 5px rgba(91, 155, 213, 0.5);
+      outline: none;
+      background-color: #f8faff;
+    }
+
+    button {
+      background: #5b9bd5;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      margin: 5px 5px 5px 0;
+      cursor: pointer;
+      font-size: 0.95rem;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    button:hover {
+      background: #4a8cd2;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    canvas {
+      width: 100%;
+      max-height: 250px;
+      height: auto !important;
+      margin-top: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      border-radius: 6px;
+    }
+
+    li {
+      background: #fdfdfd;
+      margin-bottom: 6px;
+      padding: 10px;
+      border-left: 4px solid #5b9bd5;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+
+    li:hover {
+      transform: translateX(3px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    p span {
+      font-weight: bold;
+      color: #2c3e50;
+      font-size: 1rem;
+    }
+
+    #filterDisplay {
+        font-size: 0.9em;
+        color: #777;
+        margin-top: 5px;
+        margin-bottom: 15px;
+        text-align: center;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 8px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #b0b0b0;
+    }
+
+    @media (max-width: 768px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+      header {
+        font-size: 1.5rem;
+      }
+      button {
+        padding: 10px 16px;
+        font-size: 0.95rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>📄 Printing Calculator</header>
+  <main>
+    <section>
+      <h2>Inventory</h2>
+      <label>A4: <input type="number" id="a4CountInput" value="500" onchange="updateInventoryCount('a4', this.value)"></label>
+      <label>Letter: <input type="number" id="letterCountInput" value="500" onchange="updateInventoryCount('letter', this.value)"></label>
+      <label>Legal: <input type="number" id="legalCountInput" value="500" onchange="updateInventoryCount('legal', this.value)"></label>
+      
+      <label>Price B&W: ₱<input type="number" id="priceBW" value="1"></label>
+      <label>Price Color: ₱<input type="number" id="priceColor" value="5"></label>
+      <p>Total Estimated Profit B&W: ₱<span id="estProfitBW">0</span></p>
+      <p>Total Estimated Profit Colored: ₱<span id="estProfitColor">0</span></p>
+      <button onclick="resetInventory()">Reset Inventory</button>
+    </section>
+
+    <section>
+      <h2>Print Job</h2>
+      <label>Paper Type:
+        <select id="paperType">
+          <option value="a4">A4</option>
+          <option value="letter">Letter</option>
+          <option value="legal">Legal</option>
+        </select>
+      </label>
+      <label>Print Type:
+        <select id="printType">
+          <option value="single">Single-sided</option>
+          <option value="double">Double-sided</option>
+        </select>
+      </label>
+      <label>B&W Pages: <input type="number" id="bw" value="0"></label>
+      <label>Colored Pages: <input type="number" id="colored" value="0"></label>
+      <label>Rejected B&W: <input type="number" id="rejectedBW" value="0"></label>
+      <label>Rejected Colored: <input type="number" id="rejectedColor" value="0"></label>
+      <button onclick="addPrintJob()">Add Print Job</button>
+    </section>
+
+    <section style="grid-column: span 2;">
+      <h2>Summary</h2>
+      <label>Filter by Date Range:</label>
+      <input type="date" id="startDate">
+      <input type="date" id="endDate">
+      <button onclick="filterByDate()">Apply Filter</button>
+      <button onclick="clearDateFilter()">Clear Filter</button>
+      <button onclick="exportToFile()">Save to File</button>
+      <button onclick="window.print()">Print Report</button>
+
+      <p id="filterDisplay">Showing all data.</p>
+
+      <h3>Job History</h3>
+      <ul id="history"></ul>
+
+      <h3>Usage Over Time</h3>
+      <canvas id="usageChart" height="100"></canvas>
+
+      <h3>Filtered Totals</h3>
+      <p>Total Profit for Period: ₱<span id="totalProfit">0</span></p>
+      <p>Total Loss for Period: ₱<span id="totalLoss">0</span></p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 15px 0;">
+      <h3>Overall Potential Remaining</h3>
+      <p>Total Profit Left B&W: ₱<span id="profitLeftBW">0</span></p>
+      <p>Total Profit Left Colored: ₱<span id="profitLeftColor">0</span></p>
+    </section>
+  </main>
+
+  <script>
+    let a4Count = 500;
+    let letterCount = 500;
+    let legalCount = 500;
+    let priceBW = 1;
+    let priceColor = 5;
+
+    let history = [];
+    let usageChart;
+
+    let initialEstimatedProfitBW = 0;
+    let initialEstimatedProfitColor = 0;
+
+    function loadData() {
+        const storedA4 = localStorage.getItem('a4Count');
+        const storedLetter = localStorage.getItem('letterCount');
+        const storedLegal = localStorage.getItem('legalCount');
+        const storedPriceBW = localStorage.getItem('priceBW');
+        const storedPriceColor = localStorage.getItem('priceColor');
+        const storedHistory = localStorage.getItem('history');
+        const storedInitialEstProfitBW = localStorage.getItem('initialEstimatedProfitBW');
+        const storedInitialEstProfitColor = localStorage.getItem('initialEstimatedProfitColor');
+
+        if (storedA4) a4Count = parseInt(storedA4);
+        if (storedLetter) letterCount = parseInt(storedLetter);
+        if (storedLegal) legalCount = parseInt(storedLegal);
+        if (storedPriceBW) priceBW = parseFloat(storedPriceBW);
+        if (storedPriceColor) priceColor = parseFloat(storedPriceColor);
+        if (storedHistory) history = JSON.parse(storedHistory);
+        if (storedInitialEstProfitBW !== null) initialEstimatedProfitBW = parseFloat(storedInitialEstProfitBW);
+        if (storedInitialEstProfitColor !== null) initialEstimatedProfitColor = parseFloat(storedInitialEstProfitColor);
+    }
+
+    function saveData() {
+        localStorage.setItem('a4Count', a4Count);
+        localStorage.setItem('letterCount', letterCount);
+        localStorage.setItem('legalCount', legalCount);
+        localStorage.setItem('priceBW', priceBW);
+        localStorage.setItem('priceColor', priceColor);
+        localStorage.setItem('history', JSON.stringify(history));
+        localStorage.setItem('initialEstimatedProfitBW', initialEstimatedProfitBW);
+        localStorage.setItem('initialEstimatedProfitColor', initialEstimatedProfitColor);
+    }
+
+    function calculateInitialEstimatedProfit() {
+        const totalDefaultInitialSheets = 500 + 500 + 500;
+        initialEstimatedProfitBW = totalDefaultInitialSheets * priceBW;
+        initialEstimatedProfitColor = totalDefaultInitialSheets * priceColor;
+        saveData();
+    }
+
+    function updateInventoryCount(paperType, value) {
+        let newValue = parseInt(value) || 0;
+        if (newValue < 0) newValue = 0;
+
+        if (paperType === 'a4') {
+            a4Count = newValue;
+        } else if (paperType === 'letter') {
+            letterCount = newValue;
+        } else if (paperType === 'legal') {
+            legalCount = newValue;
+        }
+        
+        calculateInitialEstimatedProfit(); 
+        updateDisplay();
+        saveData();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadData();
+        document.getElementById('a4CountInput').value = a4Count;
+        document.getElementById('letterCountInput').value = letterCount;
+        document.getElementById('legalCountInput').value = legalCount;
+
+        const totalDefaultInitialSheets = 500 + 500 + 500;
+        if (initialEstimatedProfitBW === 0 || initialEstimatedProfitColor === 0 ||
+            initialEstimatedProfitBW !== (totalDefaultInitialSheets * priceBW) || initialEstimatedProfitColor !== (totalDefaultInitialSheets * priceColor)) {
+            calculateInitialEstimatedProfit();
+        }
+        updateDisplay();
+        renderChart();
+        displayHistory();
+
+        document.getElementById('priceBW').addEventListener('change', handlePriceChange);
+        document.getElementById('priceColor').addEventListener('change', handlePriceChange);
+    });
+
+    function handlePriceChange() {
+        priceBW = parseFloat(document.getElementById('priceBW').value);
+        priceColor = parseFloat(document.getElementById('priceColor').value);
+        calculateInitialEstimatedProfit();
+        updateDisplay();
+    }
+
+    function updateDisplay() {
+        document.getElementById('a4CountInput').value = a4Count;
+        document.getElementById('letterCountInput').value = letterCount;
+        document.getElementById('legalCountInput').value = legalCount;
+        
+        document.getElementById('priceBW').value = priceBW;
+        document.getElementById('priceColor').value = priceColor;
+
+        document.getElementById('estProfitBW').textContent = initialEstimatedProfitBW.toFixed(2);
+        document.getElementById('estProfitColor').textContent = initialEstimatedProfitColor.toFixed(2);
+
+        updateTotals(history);
+    }
+
+    function resetInventory() {
+        if (confirm("Are you sure you want to reset all inventory counts to 500? This will also clear all job history and reset initial profit estimations.")) {
+            a4Count = 500;
+            letterCount = 500;
+            legalCount = 500;
+            history = [];
+            
+            calculateInitialEstimatedProfit();
+
+            saveData();
+            updateDisplay();
+            renderChart();
+            displayHistory();
+            document.getElementById('filterDisplay').textContent = "Showing all data.";
+        }
+    }
+
+    function addPrintJob() {
+        const paperType = document.getElementById('paperType').value;
+        const printType = document.getElementById('printType').value;
+        const bwPages = parseInt(document.getElementById('bw').value) || 0;
+        const coloredPages = parseInt(document.getElementById('colored').value) || 0;
+        const rejectedBW = parseInt(document.getElementById('rejectedBW').value) || 0;
+        const rejectedColor = parseInt(document.getElementById('rejectedColor').value) || 0;
+
+        priceBW = parseFloat(document.getElementById('priceBW').value);
+        priceColor = parseFloat(document.getElementById('priceColor').value);
+
+        let paperConsumed = bwPages + coloredPages + rejectedBW + rejectedColor;
+
+        let currentPaperCount;
+        if (paperType === 'a4') {
+            currentPaperCount = a4Count;
+        } else if (paperType === 'letter') {
+            currentPaperCount = letterCount;
+        } else if (paperType === 'legal') {
+            currentPaperCount = legalCount;
+        }
+
+        if (currentPaperCount < paperConsumed) {
+            alert(`Not enough ${paperType} paper! You need ${paperConsumed} sheets, but only have ${currentPaperCount}.`);
+            return;
+        }
+
+        if (paperType === 'a4') {
+            a4Count -= paperConsumed;
+        } else if (paperType === 'letter') {
+            letterCount -= paperConsumed;
+        } else if (paperType === 'legal') {
+            legalCount -= paperConsumed;
+        }
+
+        let effectivePriceBW = priceBW;
+        let effectivePriceColor = priceColor;
+        
+        if (printType === 'double') {
+            effectivePriceBW *= 2;
+            effectivePriceColor *= 2;
+        }
+        
+        const totalCost = (bwPages * effectivePriceBW) + (coloredPages * effectivePriceColor);
+
+        const lossBW = rejectedBW * priceBW;
+        const lossColor = rejectedColor * priceColor;
+        const totalLoss = lossBW + lossColor; 
+
+        const netProfit = totalCost - totalLoss;
+
+        const job = {
+            date: new Date().toISOString().split('T')[0],
+            paperType,
+            printType,
+            bwPages,
+            coloredPages,
+            rejectedBW,
+            rejectedColor,
+            paperConsumed,
+            totalCost,
+            totalLoss,
+            netProfit
+        };
+
+        history.push(job);
+        saveData();
+        updateDisplay();
+        displayHistory();
+        renderChart();
+
+        document.getElementById('bw').value = 0;
+        document.getElementById('colored').value = 0;
+        document.getElementById('rejectedBW').value = 0;
+        document.getElementById('rejectedColor').value = 0;
+    }
+
+    function displayHistory(filteredHistory = history) {
+        const historyList = document.getElementById('history');
+        historyList.innerHTML = '';
+
+        const sortedHistory = [...filteredHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        if (sortedHistory.length === 0 && filteredHistory.length > 0) {
+             historyList.innerHTML = '<li>No jobs found for the selected date range.</li>';
+        } else if (sortedHistory.length === 0) {
+             historyList.innerHTML = '<li>No jobs have been added yet.</li>';
+        }
+
+        sortedHistory.forEach((job, index) => {
+            const listItem = document.createElement('li');
+            listItem.innerHTML = `
+                <strong>${job.date}</strong> - ${job.paperType.toUpperCase()} (${job.printType})<br>
+                B&W Sheets: ${job.bwPages} (Rejected: ${job.rejectedBW})<br>
+                Colored Sheets: ${job.coloredPages} (Rejected: ${job.rejectedColor})<br>
+                Total Sheets Used: ${job.paperConsumed}<br>
+                Profit: ₱${job.netProfit.toFixed(2)} | Loss: ₱${job.totalLoss.toFixed(2)}
+            `;
+            historyList.appendChild(listItem);
+        });
+    }
+
+    function updateTotals(dataForPeriod = history) {
+        let totalProfitForPeriod = 0;
+        let totalLossForPeriod = 0;
+        let totalBWSuccessfulSheetsPrintedOverall = 0;
+        let totalColoredSuccessfulSheetsPrintedOverall = 0;
+
+        dataForPeriod.forEach(job => {
+            totalProfitForPeriod += job.netProfit;
+            totalLossForPeriod += job.totalLoss;
+        });
+
+        history.forEach(job => {
+            totalBWSuccessfulSheetsPrintedOverall += job.bwPages;
+            totalColoredSuccessfulSheetsPrintedOverall += job.coloredPages;
+        });
+
+        const currentPriceBW = parseFloat(document.getElementById('priceBW').value);
+        const currentPriceColor = parseFloat(document.getElementById('priceColor').value);
+
+        let profitLeftBW = initialEstimatedProfitBW - (totalBWSuccessfulSheetsPrintedOverall * currentPriceBW);
+        let profitLeftColor = initialEstimatedProfitColor - (totalColoredSuccessfulSheetsPrintedOverall * currentPriceColor);
+
+        profitLeftBW = Math.max(0, profitLeftBW);
+        profitLeftColor = Math.max(0, profitLeftColor);
+
+        document.getElementById('totalProfit').textContent = totalProfitForPeriod.toFixed(2);
+        document.getElementById('totalLoss').textContent = totalLossForPeriod.toFixed(2);
+        document.getElementById('profitLeftBW').textContent = profitLeftBW.toFixed(2);
+        document.getElementById('profitLeftColor').textContent = profitLeftColor.toFixed(2);
+    }
+
+    function filterByDate() {
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        const filterDisplay = document.getElementById('filterDisplay');
+
+        let filtered = history;
+        let displayMessage = "Showing all data.";
+
+        if (startDate && endDate) {
+            filtered = history.filter(job => {
+                const jobDate = new Date(job.date);
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                end.setDate(end.getDate() + 1);
+                return jobDate >= start && jobDate < end;
+            });
+            displayMessage = `Showing data from <strong>${startDate}</strong> to <strong>${endDate}</strong>.`;
+        } else if (startDate) {
+            filtered = history.filter(job => new Date(job.date) >= new Date(startDate));
+            displayMessage = `Showing data from <strong>${startDate}</strong> onwards.`;
+        } else if (endDate) {
+            const end = new Date(endDate);
+            end.setDate(end.getDate() + 1);
+            filtered = history.filter(job => new Date(job.date) < end);
+            displayMessage = `Showing data up to <strong>${endDate}</strong>.`;
+        }
+
+        displayHistory(filtered);
+        updateTotals(filtered);
+        renderChart(filtered);
+        filterDisplay.innerHTML = displayMessage;
+    }
+
+    function clearDateFilter() {
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        document.getElementById('filterDisplay').textContent = "Showing all data.";
+        displayHistory();
+        updateTotals(history);
+        renderChart();
+    }
+
+    function exportToFile() {
+        const data = JSON.stringify({
+            a4Count,
+            letterCount,
+            legalCount,
+            priceBW,
+            priceColor,
+            history,
+            initialEstimatedProfitBW,
+            initialEstimatedProfitColor
+        }, null, 2);
+
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const today = new Date().toISOString().split('T')[0];
+        a.download = `printing_calculator_data_${today}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function renderChart(dataToChart = history) {
+        const ctx = document.getElementById('usageChart').getContext('2d');
+
+        if (!ctx) {
+            return;
+        }
+
+        const dailyData = {};
+        dataToChart.forEach(job => {
+            if (!dailyData[job.date]) {
+                dailyData[job.date] = { profit: 0, loss: 0 };
+            }
+            dailyData[job.date].profit += job.netProfit;
+            dailyData[job.date].loss += job.totalLoss;
+        });
+
+        const dates = Object.keys(dailyData).sort();
+        const profits = dates.map(date => dailyData[date].profit);
+        const losses = dates.map(date => dailyData[date].loss);
+
+        if (usageChart) {
+            usageChart.destroy();
+        }
+
+        try {
+            usageChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Total Profit',
+                        data: profits,
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                        tension: 0.3,
+                        fill: true
+                    }, {
+                        label: 'Total Loss',
+                        data: losses,
+                        borderColor: '#F44336',
+                        backgroundColor: 'rgba(244, 67, 54, 0.2)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Date',
+                                color: '#2c3e50'
+                            },
+                            ticks: {
+                                color: '#555'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Amount (₱)',
+                                color: '#2c3e50'
+                            },
+                            ticks: {
+                                color: '#555'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#2c3e50'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff'
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("Error rendering chart:", error);
+        }
+    }
+  </script>
+</body>
+</html>
