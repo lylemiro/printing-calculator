@@ -186,6 +186,72 @@
         font-size: 0.95rem;
       }
     }
+
+    @media print {
+      body.print-summary-only header,
+      body.print-summary-only main > section:nth-child(1),
+      body.print-summary-only main > section:nth-child(2) {
+        display: none !important;
+      }
+
+      body.print-summary-only {
+        background: none !important;
+        margin: 0;
+        padding: 0;
+      }
+
+      #summarySection {
+        display: block !important;
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 20px;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        background: white !important;
+        grid-column: 1 / -1 !important;
+      }
+
+      #summarySection h2,
+      #summarySection h3 {
+        color: #000 !important;
+        border-bottom-color: #ccc !important;
+      }
+
+      #summarySection p,
+      #summarySection label,
+      #summarySection li {
+        color: #000 !important;
+        background: none !important;
+        box-shadow: none !important;
+        border-left-color: #999 !important;
+      }
+
+      #summarySection input[type="date"],
+      #summarySection button {
+        display: none !important;
+      }
+
+      #filterDisplay {
+        font-size: 1.1em !important;
+        font-weight: bold !important;
+        color: #333 !important;
+        text-align: left !important;
+        margin-bottom: 20px !important;
+        padding-bottom: 10px !important;
+        border-bottom: 1px solid #ddd !important;
+      }
+
+      #summarySection hr {
+        border-top: 1px solid #ddd !important;
+      }
+
+      canvas {
+        max-height: 400px !important;
+        height: auto !important;
+        box-shadow: none !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -226,7 +292,7 @@
       <button onclick="addPrintJob()">Add Print Job</button>
     </section>
 
-    <section style="grid-column: span 2;">
+    <section id="summarySection" style="grid-column: span 2;">
       <h2>Summary</h2>
       <label>Filter by Date Range:</label>
       <input type="date" id="startDate">
@@ -234,7 +300,7 @@
       <button onclick="filterByDate()">Apply Filter</button>
       <button onclick="clearDateFilter()">Clear Filter</button>
       <button onclick="exportToFile()">Save to File</button>
-      <button onclick="window.print()">Print Report</button>
+      <button onclick="printSummaryReport()">Print Report</button>
 
       <p id="filterDisplay">Showing all data.</p>
 
@@ -673,6 +739,21 @@
         } catch (error) {
             console.error("Error rendering chart:", error);
         }
+    }
+
+    function printSummaryReport() {
+        document.body.classList.add('print-summary-only');
+
+        setTimeout(() => {
+            window.print();
+        }, 100);
+
+        window.onafterprint = () => {
+            document.body.classList.remove('print-summary-only');
+        };
+        setTimeout(() => {
+            document.body.classList.remove('print-summary-only');
+        }, 1000);
     }
   </script>
 </body>
